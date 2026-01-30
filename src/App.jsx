@@ -47,8 +47,8 @@ const App = () => {
   }, []);
 
   return (
-    <main>
-      <h1>Human.exe POC</h1>
+    <main className="relative w-full h-screen">
+      <h1 className="absolute">Human.exe POC</h1>
       <canvas ref={canvasRef}></canvas>
     </main>
   );
