@@ -19,10 +19,6 @@ const App = () => {
     // Création de la scène Three.js
     const scene = new THREE.Scene();
 
-    // Caméra perspective
-    // FOV = 70°, ratio = largeur / hauteur
-    const camera = new THREE.PerspectiveCamera(70, iw / ih);
-
     // Variable qui contiendra le mesh (cube temporaire ou modèle GLTF)
     let mesh = null;
 
@@ -83,7 +79,8 @@ const App = () => {
             }
           }
         });
-
+        mesh.scale.set(1, 1, 1);
+        mesh.position.set(0, -1, 0);
         // Ajout du modèle à la scène
         scene.add(mesh);
         console.log("Modèle 3D chargé");
@@ -101,9 +98,12 @@ const App = () => {
     /* =========================
      CAMÉRA
      ========================= */
+    // Caméra perspective
+    // FOV = 70°, ratio = largeur / hauteur
+    const camera = new THREE.PerspectiveCamera(70, iw / ih);
 
-    // Position de la caméra
-    camera.position.set(0, 0, 2);
+    camera.position.set(0, 0.8, 2.3);
+    camera.rotation.x -= 0.1; // tourne autour de l’axe Y
 
     /* =========================
      RENDERER
