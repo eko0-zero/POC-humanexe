@@ -79,7 +79,7 @@ const App = () => {
             }
           }
         });
-        mesh.scale.set(1, 1, 1);
+        mesh.scale.set(1, 1, 0.8);
         mesh.position.set(0, -1, 0);
         // Ajout du modèle à la scène
         scene.add(mesh);
