@@ -338,7 +338,7 @@ const App = () => {
     renderer.domElement.addEventListener("dragover", onDragOver);
     renderer.domElement.addEventListener("drop", onDrop);
 
-    // --- Cleanup ---
+    // --- Cleanup --
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener("mousedown", onMouseDown);
