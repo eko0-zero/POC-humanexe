@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import "./App.css";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { World, Vec3, Body, Plane, Box } from "cannon-es";
 
 // ─────────────────────────────────────────────
 // CONSTANTES
@@ -9,8 +10,17 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 const MODEL_PATH = new URL("./assets/3D/base.glb", import.meta.url).href;
 const DRAG_SENSITIVITY = 0.005;
 
+// Position Y du sol — doit correspondre à plane.position.y dans la scène
+const GROUND_Y = -1;
+
+// Décalage vertical du mesh par rapport au corps physique.
+// La boîte Cannon a une demi-hauteur de 0.5, donc son centre est à 0.5 au-dessus du sol.
+// Si le modèle a son origine aux pieds, on décale de -0.5 pour qu'il touche le sol.
+// Ajustez cette valeur si le modèle flotte encore ou s'enfonce.
+const MODEL_Y_OFFSET = -0.5;
+
 // ─────────────────────────────────────────────
-// HELPERS — créent chaque partie de la scène
+// HELPERS — scène Three.js
 // ─────────────────────────────────────────────
 
 function createCamera(aspect) {
@@ -30,16 +40,13 @@ function createRenderer(canvas, width, height) {
 }
 
 function createLights(scene) {
-  // Lumière ambiante
   const ambient = new THREE.AmbientLight(0xffffff, 2.5);
   scene.add(ambient);
 
-  // Lumière directionnelle (soleil)
   const dirLight = new THREE.DirectionalLight(0xffffff, 5);
   dirLight.position.set(5, 8, 5);
   dirLight.target.position.set(0, 0, 0);
   dirLight.castShadow = true;
-
   dirLight.shadow.mapSize.set(2048, 2048);
   dirLight.shadow.camera.left = -10;
   dirLight.shadow.camera.right = 10;
@@ -52,7 +59,6 @@ function createLights(scene) {
 
   scene.add(dirLight);
   scene.add(dirLight.target);
-
   return { ambient, dirLight };
 }
 
@@ -60,11 +66,9 @@ function createGround(scene) {
   const geometry = new THREE.PlaneGeometry(10, 10);
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
   const plane = new THREE.Mesh(geometry, material);
-
   plane.rotation.x = -Math.PI / 2;
-  plane.position.y = -1;
+  plane.position.y = GROUND_Y;
   plane.receiveShadow = true;
-
   scene.add(plane);
   return plane;
 }
@@ -81,17 +85,13 @@ function createPlaceholderCube(scene) {
 function loadModel(scene, placeholderCube) {
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
-
     loader.load(
       MODEL_PATH,
       (gltf) => {
-        // Enlever le cube temporaire
         scene.remove(placeholderCube);
-
         const model = gltf.scene;
         model.castShadow = true;
 
-        // Appliquer les ombres à chaque mesh du modèle
         model.traverse((node) => {
           if (node.isMesh) {
             node.castShadow = true;
@@ -104,9 +104,7 @@ function loadModel(scene, placeholderCube) {
         });
 
         model.scale.set(1, 1, 0.5);
-        model.position.set(0, -1, 0);
         scene.add(model);
-
         console.log("Modèle 3D chargé");
         resolve(model);
       },
@@ -117,6 +115,54 @@ function loadModel(scene, placeholderCube) {
       },
     );
   });
+}
+
+// ─────────────────────────────────────────────
+// HELPERS — monde physique Cannon.js
+// ─────────────────────────────────────────────
+
+function createPhysicsWorld() {
+  const world = new World({
+    gravity: new Vec3(0, -9.82, 0),
+  });
+
+  // Solver plus précis (moins de jitter)
+  world.solver.iterations = 10;
+
+  return world;
+}
+
+// Corps du sol : statique (masse = 0), plan infini
+function createGroundBody() {
+  const shape = new Plane();
+  const body = new Body({ mass: 0 });
+  body.addShape(shape);
+
+  // Le plan Cannon pointe vers +Z par défaut → on le couche vers le haut
+  body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  body.position.set(0, GROUND_Y, 0);
+
+  return body;
+}
+
+// Corps du personnage : boîte englobante approximée
+// On peut affiner les dimensions plus tard selon le modèle réel
+function createCharacterBody(startY) {
+  const halfExtents = new Vec3(0.4, 0.5, 0.3);
+  const shape = new Box(halfExtents);
+
+  const body = new Body({
+    mass: 1, // masse > 0 → dynamique, affecté par la gravité
+    linearDamping: 0.9, // friction de l'air (évite que le personnage glisse indéfiniment)
+  });
+
+  body.addShape(shape);
+
+  // Position de départ : au-dessus du sol
+  // Le centre de la boîte doit être à GROUND_Y + halfExtents.y
+  body.position.set(0, startY, 0);
+
+  return body;
 }
 
 // ─────────────────────────────────────────────
@@ -132,38 +178,59 @@ const App = () => {
     const width = window.innerWidth;
     const height = window.innerHeight;
 
-    // ── Initialisation de la scène ──
+    // ── Scène Three.js ──
     const scene = new THREE.Scene();
     const camera = createCamera(width / height);
     const renderer = createRenderer(canvas, width, height);
     const { dirLight } = createLights(scene);
     createGround(scene);
 
-    // ── Modèle 3D : cube par défaut, puis GLTF ──
+    // ── Monde physique Cannon.js ──
+    const world = createPhysicsWorld();
+
+    // Sol physique
+    const groundBody = createGroundBody();
+    world.addBody(groundBody);
+
+    // Corps du personnage — on le place un peu au-dessus du sol pour qu'il tombe
+    const characterBody = createCharacterBody(GROUND_Y + 2);
+    world.addBody(characterBody);
+
+    // ── Modèle 3D ──
     const placeholder = createPlaceholderCube(scene);
-    let mesh = placeholder; // référence active vers l'objet courant
+    let mesh = placeholder;
+
+    // Positionne le placeholder sur le corps physique pour le début
+    mesh.position.set(
+      characterBody.position.x,
+      characterBody.position.y + MODEL_Y_OFFSET,
+      characterBody.position.z,
+    );
 
     loadModel(scene, placeholder).then((model) => {
       mesh = model;
+      // Synchronise le modèle chargé sur la position actuelle du corps physique
+      mesh.position.set(
+        characterBody.position.x,
+        characterBody.position.y + MODEL_Y_OFFSET,
+        characterBody.position.z,
+      );
     });
 
-    // Premier rendu
     renderer.render(scene, camera);
 
     // ─────────────────────────────────────────
-    // RAYCASTER partagé (drag + drop)
+    // RAYCASTER partagé
     // ─────────────────────────────────────────
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    // Convertit une position écran en NDC (-1 → 1)
     const screenToNDC = (clientX, clientY) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     };
 
-    // Teste si un point écran touche le modèle
     const isOverModel = (clientX, clientY) => {
       if (!mesh) return false;
       screenToNDC(clientX, clientY);
@@ -172,51 +239,94 @@ const App = () => {
     };
 
     // ─────────────────────────────────────────
-    // DRAG DE POSITION (clic + souris)
+    // DRAG DE POSITION
     // ─────────────────────────────────────────
+    // Pendant le drag on manipule le corps physique, pas le mesh.
+    // On met la masse à 0 pour "neutraliser" la gravité, puis on la remet à 1
+    // à la souris levée → le personnage tombe naturellement.
     let isDragging = false;
     let prevX = 0;
     let prevY = 0;
 
     const onMouseDown = (e) => {
-      // On ne démarre le drag que si le clic est sur le modèle
       if (!isOverModel(e.clientX, e.clientY)) return;
 
       isDragging = true;
       prevX = e.clientX;
       prevY = e.clientY;
+
+      // Neutralise la gravité pendant le drag
+      characterBody.mass = 0;
+      characterBody.updateMassProperties();
+
+      // Tue la vitesse actuelle pour éviter les sauteries
+      characterBody.velocity.set(0, 0, 0);
+      characterBody.angularVelocity.set(0, 0, 0);
     };
 
     const onMouseMove = (e) => {
-      if (!isDragging || !mesh) return;
+      if (!isDragging) return;
 
-      mesh.position.x += (e.clientX - prevX) * DRAG_SENSITIVITY;
-      mesh.position.y -= (e.clientY - prevY) * DRAG_SENSITIVITY;
+      const deltaX = (e.clientX - prevX) * DRAG_SENSITIVITY;
+      const deltaY = (e.clientY - prevY) * DRAG_SENSITIVITY;
+
+      // Déplace le corps physique (pas le mesh — la synchro se fait dans animate)
+      characterBody.position.x += deltaX;
+      characterBody.position.y -= deltaY;
+
+      // Bloque au sol : le centre de la boîte ne peut pas descendre en dessous de GROUND_Y + halfExtents.y
+      // halfExtents.y = 0.5 (défini dans createCharacterBody)
+      const minY = GROUND_Y + 0.5;
+      if (characterBody.position.y < minY) {
+        characterBody.position.y = minY;
+      }
 
       prevX = e.clientX;
       prevY = e.clientY;
     };
 
     const onMouseUp = () => {
+      if (!isDragging) return;
       isDragging = false;
+
+      // Remet la masse → la gravité reprend, le personnage tombe
+      characterBody.mass = 1;
+      characterBody.updateMassProperties();
     };
 
+    // ─────────────────────────────────────────
+    // DROP DE FICHIER
+    // ─────────────────────────────────────────
     const onDragOver = (e) => {
-      e.preventDefault(); // obligatoire pour autoriser le drop
+      e.preventDefault();
     };
 
     const onDrop = (e) => {
       e.preventDefault();
       if (!mesh) return;
 
-      // Réutilise screenToNDC + raycaster déjà déclarés
       screenToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(mouse, camera);
       const intersections = raycaster.intersectObjects([mesh], true);
+
+      if (intersections.length > 0) {
+        const fichiers = e.dataTransfer.files;
+        console.log("✅ Drop sur le modèle");
+        console.log(
+          "   Objet touché :",
+          intersections[0].object.name || "sans nom",
+        );
+        console.log("   Point 3D     :", intersections[0].point);
+        if (fichiers.length > 0) {
+          console.log("   Fichier      :", fichiers[0].name);
+        }
+      } else {
+        console.log("❌ Drop hors du modèle — ignoré");
+      }
     };
 
     // ─────────────────────────────────────────
-    // LUMIÈRE DIRECTIONNELLE suit le modèle
+    // LUMIÈRE suit le modèle
     // ─────────────────────────────────────────
     const updateLightTarget = () => {
       if (!mesh) return;
@@ -231,15 +341,37 @@ const App = () => {
     // BOUCLE D'ANIMATION
     // ─────────────────────────────────────────
     let animId;
+    let lastTime = performance.now();
+
     const animate = () => {
       animId = requestAnimationFrame(animate);
+
+      // Calcul du delta temps en secondes
+      const now = performance.now();
+      const dt = Math.min((now - lastTime) / 1000, 0.05); // capped à 50ms pour éviter les big jumps
+      lastTime = now;
+
+      // Step du monde physique
+      world.step(1 / 60, dt, 3);
+
+      // Synchronise le mesh sur le corps physique
+      if (mesh) {
+        mesh.position.set(
+          characterBody.position.x,
+          characterBody.position.y + MODEL_Y_OFFSET,
+          characterBody.position.z,
+        );
+        // On copie aussi la rotation si vous voulez que le personnage puisse culbuter
+        // mesh.quaternion.copy(characterBody.quaternion);
+      }
+
       updateLightTarget();
       renderer.render(scene, camera);
     };
     animate();
 
     // ─────────────────────────────────────────
-    // REDIMENSIONNEMENT DE LA FENÊTRE
+    // RESIZE
     // ─────────────────────────────────────────
     const onResize = () => {
       const w = window.innerWidth;
@@ -260,7 +392,7 @@ const App = () => {
     renderer.domElement.addEventListener("drop", onDrop);
 
     // ─────────────────────────────────────────
-    // CLEANUP (unmount du composant)
+    // CLEANUP
     // ─────────────────────────────────────────
     return () => {
       cancelAnimationFrame(animId);
