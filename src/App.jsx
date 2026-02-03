@@ -3,274 +3,281 @@ import "./App.css";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-const App = () => {
-  // Référence vers le <canvas> React
-  const canvasRef = useRef(null);
+// ─────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────
+const MODEL_PATH = new URL("./assets/3D/base.glb", import.meta.url).href;
+const DRAG_SENSITIVITY = 0.005;
 
-  useEffect(() => {
-    // Si le canvas n'est pas encore monté, on sort
-    if (!canvasRef.current) return;
+// ─────────────────────────────────────────────
+// HELPERS — créent chaque partie de la scène
+// ─────────────────────────────────────────────
 
-    // Récupération du canvas et des dimensions de la fenêtre
-    const canvas = canvasRef.current;
-    const iw = window.innerWidth;
-    const ih = window.innerHeight;
+function createCamera(aspect) {
+  const camera = new THREE.PerspectiveCamera(70, aspect);
+  camera.position.set(0, 0.8, 2.3);
+  camera.rotation.x = -0.1;
+  return camera;
+}
 
-    // Création de la scène Three.js
-    const scene = new THREE.Scene();
+function createRenderer(canvas, width, height) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.setClearColor(0xffffff);
+  renderer.setSize(width, height);
+  return renderer;
+}
 
-    // Variable qui contiendra le mesh (cube temporaire ou modèle GLTF)
-    let mesh = null;
+function createLights(scene) {
+  // Lumière ambiante
+  const ambient = new THREE.AmbientLight(0xffffff, 2.5);
+  scene.add(ambient);
 
-    /* =========================
-     CUBE TEMPORAIRE (DEBUG)
-     ========================= */
+  // Lumière directionnelle (soleil)
+  const dirLight = new THREE.DirectionalLight(0xffffff, 5);
+  dirLight.position.set(5, 8, 5);
+  dirLight.target.position.set(0, 0, 0);
+  dirLight.castShadow = true;
 
-    // Géométrie d'un cube
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
+  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.camera.left = -10;
+  dirLight.shadow.camera.right = 10;
+  dirLight.shadow.camera.top = 10;
+  dirLight.shadow.camera.bottom = -10;
+  dirLight.shadow.camera.near = 0.1;
+  dirLight.shadow.camera.far = 100;
+  dirLight.shadow.bias = 0.0001;
+  dirLight.shadow.normalBias = 0.05;
 
-    // Matériau Phong (réagit à la lumière + ombres)
-    const material = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+  scene.add(dirLight);
+  scene.add(dirLight.target);
 
-    // Création du mesh
-    mesh = new THREE.Mesh(geometry, material);
+  return { ambient, dirLight };
+}
 
-    // Le cube projette des ombres
-    mesh.castShadow = true;
+function createGround(scene) {
+  const geometry = new THREE.PlaneGeometry(10, 10);
+  const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const plane = new THREE.Mesh(geometry, material);
 
-    // Le cube ne reçoit pas d’ombres
-    mesh.receiveShadow = false;
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.y = -1;
+  plane.receiveShadow = true;
 
-    // Ajout à la scène
-    scene.add(mesh);
+  scene.add(plane);
+  return plane;
+}
 
-    /* =========================
-     CHARGEMENT DU MODÈLE 3D
-     ========================= */
+function createPlaceholderCube(scene) {
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const material = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+  const cube = new THREE.Mesh(geometry, material);
+  cube.castShadow = true;
+  scene.add(cube);
+  return cube;
+}
 
+function loadModel(scene, placeholderCube) {
+  return new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
+
     loader.load(
-      // Chemin vers le fichier .glb
-      new URL("./assets/3D/base.glb", import.meta.url).href,
-
-      // Callback succès
+      MODEL_PATH,
       (gltf) => {
-        // On enlève le cube temporaire
-        scene.remove(mesh);
+        // Enlever le cube temporaire
+        scene.remove(placeholderCube);
 
-        // On remplace par le modèle 3D
-        mesh = gltf.scene;
+        const model = gltf.scene;
+        model.castShadow = true;
 
-        // Le modèle projette des ombres
-        mesh.castShadow = true;
-        mesh.receiveShadow = false;
-
-        // Parcours de tous les objets du modèle
-        mesh.traverse((node) => {
+        // Appliquer les ombres à chaque mesh du modèle
+        model.traverse((node) => {
           if (node.isMesh) {
             node.castShadow = true;
             node.receiveShadow = false;
-
-            // Clone du matériau pour éviter des effets de bord
             if (node.material) {
-              const newMaterial = node.material.clone();
-              newMaterial.shadowSide = THREE.FrontSide;
-              node.material = newMaterial;
+              node.material = node.material.clone();
+              node.material.shadowSide = THREE.FrontSide;
             }
           }
         });
-        mesh.scale.set(1, 1, 0.8);
-        mesh.position.set(0, -1, 0);
-        // Ajout du modèle à la scène
-        scene.add(mesh);
+
+        model.scale.set(1, 1, 0.5);
+        model.position.set(0, -1, 0);
+        scene.add(model);
+
         console.log("Modèle 3D chargé");
+        resolve(model);
       },
-
-      // Callback progression (non utilisé)
       undefined,
-
-      // Callback erreur
       (error) => {
-        console.error("Erreur chargement modèle:", error);
+        console.error("Erreur chargement modèle :", error);
+        reject(error);
       },
     );
+  });
+}
 
-    /* =========================
-     CAMÉRA
-     ========================= */
-    // Caméra perspective
-    // FOV = 70°, ratio = largeur / hauteur
-    const camera = new THREE.PerspectiveCamera(70, iw / ih);
+// ─────────────────────────────────────────────
+// COMPOSANT PRINCIPAL
+// ─────────────────────────────────────────────
+const App = () => {
+  const canvasRef = useRef(null);
 
-    camera.position.set(0, 0.8, 2.3);
-    camera.rotation.x -= 0.1; // tourne autour de l’axe Y
+  useEffect(() => {
+    if (!canvasRef.current) return;
 
-    /* =========================
-     RENDERER
-     ========================= */
+    const canvas = canvasRef.current;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
+    // ── Initialisation de la scène ──
+    const scene = new THREE.Scene();
+    const camera = createCamera(width / height);
+    const renderer = createRenderer(canvas, width, height);
+    const { dirLight } = createLights(scene);
+    createGround(scene);
+
+    // ── Modèle 3D : cube par défaut, puis GLTF ──
+    const placeholder = createPlaceholderCube(scene);
+    let mesh = placeholder; // référence active vers l'objet courant
+
+    loadModel(scene, placeholder).then((model) => {
+      mesh = model;
     });
-
-    // Activation des ombres
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
-
-    // Couleur de fond blanche
-    renderer.setClearColor(0xffffff);
-
-    // Taille du renderer
-    renderer.setSize(iw, ih);
-
-    /* =========================
-     LUMIÈRES
-     ========================= */
-
-    // Lumière ambiante (éclaire tout uniformément)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
-    scene.add(ambientLight);
-
-    // Lumière directionnelle (soleil)
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 5);
-
-    // Position de la lumière
-    directionalLight.position.set(5, 8, 5);
-
-    // La lumière pointe vers le centre
-    directionalLight.target.position.set(0, 0, 0);
-
-    // Activation des ombres
-    directionalLight.castShadow = true;
-
-    // Résolution de la shadow map
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-
-    // Frustum de la caméra d’ombre
-    directionalLight.shadow.camera.left = -10;
-    directionalLight.shadow.camera.right = 10;
-    directionalLight.shadow.camera.top = 10;
-    directionalLight.shadow.camera.bottom = -10;
-    directionalLight.shadow.camera.near = 0.1;
-    directionalLight.shadow.camera.far = 100;
-
-    // Réduction des artefacts d’ombre
-    directionalLight.shadow.bias = 0.0001;
-    directionalLight.shadow.normalBias = 0.05;
-
-    scene.add(directionalLight);
-    scene.add(directionalLight.target);
-
-    /* =========================
-     SOL POUR RECEVOIR L’OMBRE
-     ========================= */
-
-    const planeGeometry = new THREE.PlaneGeometry(10, 10);
-    const planeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-
-    // Orientation horizontale
-    plane.rotation.x = -Math.PI / 2;
-
-    // Position sous le modèle
-    plane.position.y = -1;
-
-    // Le plan reçoit les ombres
-    plane.receiveShadow = true;
-
-    scene.add(plane);
 
     // Premier rendu
     renderer.render(scene, camera);
 
-    /* =========================
-     DRAG & DROP (POSITION)
-     ========================= */
+    // ─────────────────────────────────────────
+    // RAYCASTER partagé (drag + drop)
+    // ─────────────────────────────────────────
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
 
-    let isDraggingPosition = false;
-    let previousPosX = 0;
-    let previousPosY = 0;
-
-    const onMouseDown = (event) => {
-      isDraggingPosition = true;
-      previousPosX = event.clientX;
-      previousPosY = event.clientY;
+    // Convertit une position écran en NDC (-1 → 1)
+    const screenToNDC = (clientX, clientY) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     };
 
-    const onMouseMove = (event) => {
-      if (!isDraggingPosition || !mesh) return;
+    // Teste si un point écran touche le modèle
+    const isOverModel = (clientX, clientY) => {
+      if (!mesh) return false;
+      screenToNDC(clientX, clientY);
+      raycaster.setFromCamera(mouse, camera);
+      return raycaster.intersectObjects([mesh], true).length > 0;
+    };
 
-      // Calcul du déplacement de la souris
-      const deltaX = event.clientX - previousPosX;
-      const deltaY = event.clientY - previousPosY;
+    // ─────────────────────────────────────────
+    // DRAG DE POSITION (clic + souris)
+    // ─────────────────────────────────────────
+    let isDragging = false;
+    let prevX = 0;
+    let prevY = 0;
 
-      // Déplacement du modèle
-      mesh.position.x += deltaX * 0.005;
-      mesh.position.y -= deltaY * 0.005;
+    const onMouseDown = (e) => {
+      // On ne démarre le drag que si le clic est sur le modèle
+      if (!isOverModel(e.clientX, e.clientY)) return;
 
-      previousPosX = event.clientX;
-      previousPosY = event.clientY;
+      isDragging = true;
+      prevX = e.clientX;
+      prevY = e.clientY;
+    };
+
+    const onMouseMove = (e) => {
+      if (!isDragging || !mesh) return;
+
+      mesh.position.x += (e.clientX - prevX) * DRAG_SENSITIVITY;
+      mesh.position.y -= (e.clientY - prevY) * DRAG_SENSITIVITY;
+
+      prevX = e.clientX;
+      prevY = e.clientY;
     };
 
     const onMouseUp = () => {
-      isDraggingPosition = false;
+      isDragging = false;
     };
 
-    /* =========================
-     ANIMATION LOOP
-     ========================= */
+    const onDragOver = (e) => {
+      e.preventDefault(); // obligatoire pour autoriser le drop
+    };
 
+    const onDrop = (e) => {
+      e.preventDefault();
+      if (!mesh) return;
+
+      // Réutilise screenToNDC + raycaster déjà déclarés
+      screenToNDC(e.clientX, e.clientY);
+      raycaster.setFromCamera(mouse, camera);
+      const intersections = raycaster.intersectObjects([mesh], true);
+    };
+
+    // ─────────────────────────────────────────
+    // LUMIÈRE DIRECTIONNELLE suit le modèle
+    // ─────────────────────────────────────────
+    const updateLightTarget = () => {
+      if (!mesh) return;
+      dirLight.target.position.copy(mesh.position);
+      dirLight.target.updateMatrixWorld();
+      dirLight.shadow.camera.position.copy(dirLight.position);
+      dirLight.shadow.camera.lookAt(mesh.position);
+      dirLight.shadow.camera.updateProjectionMatrix();
+    };
+
+    // ─────────────────────────────────────────
+    // BOUCLE D'ANIMATION
+    // ─────────────────────────────────────────
+    let animId;
     const animate = () => {
-      requestAnimationFrame(animate);
-
-      // La lumière suit le modèle
-      if (mesh) {
-        directionalLight.target.position.copy(mesh.position);
-        directionalLight.target.updateMatrixWorld();
-
-        // Mise à jour de la caméra d’ombre
-        directionalLight.shadow.camera.position.copy(directionalLight.position);
-        directionalLight.shadow.camera.lookAt(mesh.position);
-        directionalLight.shadow.camera.updateProjectionMatrix();
-      }
-
+      animId = requestAnimationFrame(animate);
+      updateLightTarget();
       renderer.render(scene, camera);
     };
-
     animate();
 
-    /* =========================
-     EVENTS
-     ========================= */
+    // ─────────────────────────────────────────
+    // REDIMENSIONNEMENT DE LA FENÊTRE
+    // ─────────────────────────────────────────
+    const onResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
 
+    // ─────────────────────────────────────────
+    // ABONNEMENT AUX ÉVÉNEMENTS
+    // ─────────────────────────────────────────
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("resize", onResize);
+    renderer.domElement.addEventListener("dragover", onDragOver);
+    renderer.domElement.addEventListener("drop", onDrop);
 
-    const handleResize = () => {
-      const newIw = window.innerWidth;
-      const newIh = window.innerHeight;
-      camera.aspect = newIw / newIh;
-      camera.updateProjectionMatrix();
-      renderer.setSize(newIw, newIh);
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    // Cleanup React
+    // ─────────────────────────────────────────
+    // CLEANUP (unmount du composant)
+    // ─────────────────────────────────────────
     return () => {
-      window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(animId);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("resize", onResize);
+      renderer.domElement.removeEventListener("dragover", onDragOver);
+      renderer.domElement.removeEventListener("drop", onDrop);
+      renderer.dispose();
     };
   }, []);
+
   return (
     <main className="relative w-full h-screen">
       <h1 className="absolute p-5">Human.exe POC</h1>
-      <canvas ref={canvasRef}></canvas>
+      <canvas ref={canvasRef} />
     </main>
   );
 };
