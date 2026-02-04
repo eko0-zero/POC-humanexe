@@ -93,7 +93,7 @@ function loadModel(scene, placeholderCube) {
           }
         });
 
-        model.scale.set(1, 1, 0.5);
+        model.scale.set(1, 1, 0.8);
         scene.add(model);
         resolve(model);
       },
