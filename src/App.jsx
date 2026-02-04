@@ -439,35 +439,36 @@ const App = () => {
       lastTime = now;
 
       if (boneState === BoneState.DRAG) {
-        // Applique une force pour que la TÊTE atteigne desiredHeadPos
-        const currentHeadPos = new Vec3(
-          characterBody.position.x,
-          characterBody.position.y + HEAD_OFFSET_Y,
-          characterBody.position.z,
-        );
+        const bodyHalfHeight = 0.5;
+        const minY = GROUND_Y + bodyHalfHeight;
 
-        // Distance entre tête actuelle et désirée
-        const diff = new Vec3(
-          desiredHeadPos.x - currentHeadPos.x,
-          desiredHeadPos.y - currentHeadPos.y,
-          0,
-        );
-
-        // Force forte pour suivre la tête
         const stiffness = 600;
         const damping = 50;
 
-        const force = diff.scale(stiffness);
-        const dampingForce = new Vec3(
-          characterBody.velocity.x * -damping,
-          characterBody.velocity.y * -damping,
-          0,
-        );
+        // Position actuelle de la tête
+        const currentHeadX = characterBody.position.x;
+        const currentHeadY = characterBody.position.y + HEAD_OFFSET_Y;
 
-        characterBody.applyForce(
-          force.vadd(dampingForce),
-          characterBody.position,
-        );
+        // Calcul des différences
+        const diffX = desiredHeadPos.x - currentHeadX;
+        const diffY = desiredHeadPos.y - currentHeadY;
+
+        // Si on est au sol, verrouille la position Y
+        if (characterBody.position.y <= minY) {
+          characterBody.position.y = minY;
+          characterBody.velocity.y = 0;
+
+          // Force uniquement horizontale
+          const forceX = diffX * stiffness - characterBody.velocity.x * damping;
+          characterBody.velocity.x += (forceX / characterBody.mass) * dt;
+        } else {
+          // En l'air, applique les deux forces
+          const forceX = diffX * stiffness - characterBody.velocity.x * damping;
+          const forceY = diffY * stiffness - characterBody.velocity.y * damping;
+
+          characterBody.velocity.x += (forceX / characterBody.mass) * dt;
+          characterBody.velocity.y += (forceY / characterBody.mass) * dt;
+        }
       }
 
       if (boneState === BoneState.RECOVER) {
