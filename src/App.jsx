@@ -11,6 +11,50 @@ const MODEL_PATH = new URL("./assets/3D/base.glb", import.meta.url).href;
 const GROUND_Y = -1;
 const MODEL_Y_OFFSET = -0.5;
 
+const BoneState = {
+  PHYSICS: "physics",
+  DRAG: "drag",
+  RECOVER: "recover",
+};
+
+function applyFollowForce(body, target, stiffness = 120, damping = 18) {
+  const toTarget = new Vec3(
+    target.x - body.position.x,
+    target.y - body.position.y,
+    target.z - body.position.z,
+  );
+
+  const force = toTarget.scale(stiffness);
+  const dampingForce = body.velocity.scale(-damping);
+
+  body.applyForce(force.vadd(dampingForce), body.position);
+}
+
+function recoverUpright(body) {
+  const uprightQuat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(0, 0, 0),
+  );
+
+  const currentQuat = new THREE.Quaternion(
+    body.quaternion.x,
+    body.quaternion.y,
+    body.quaternion.z,
+    body.quaternion.w,
+  );
+
+  currentQuat.slerp(uprightQuat, 0.1);
+
+  body.quaternion.set(
+    currentQuat.x,
+    currentQuat.y,
+    currentQuat.z,
+    currentQuat.w,
+  );
+
+  body.velocity.scale(0.96, body.velocity);
+  body.angularVelocity.scale(0.92, body.angularVelocity);
+}
+
 // ─────────────────────────────────────────────
 // HELPERS — scène Three.js
 // ─────────────────────────────────────────────
@@ -129,7 +173,11 @@ function createGroundBody() {
 function createCharacterBody(startY) {
   const halfExtents = new Vec3(0.4, 0.5, 0.3);
   const shape = new Box(halfExtents);
-  const body = new Body({ mass: 1, linearDamping: 0.9 });
+  const body = new Body({
+    mass: 1,
+    linearDamping: 0.15,
+    angularDamping: 0.4,
+  });
   body.addShape(shape);
   body.position.set(0, startY, 0);
   return body;
@@ -192,10 +240,15 @@ const App = () => {
     const characterBody = createCharacterBody(GROUND_Y + 2);
     world.addBody(characterBody);
 
+    let boneState = BoneState.PHYSICS;
+    const dragTarget = new Vec3();
+
     // ── Modèle ──
     const placeholder = createPlaceholderCube(scene);
     let mesh = placeholder;
     let modelSize = new THREE.Vector3(1, 1, 1);
+    let skeleton = null;
+    let testBone = null;
 
     mesh.position.set(
       characterBody.position.x,
@@ -207,6 +260,23 @@ const App = () => {
       mesh = model;
       const box = new THREE.Box3().setFromObject(mesh);
       box.getSize(modelSize);
+
+      // ── Skeleton / bone test ──
+      mesh.traverse((o) => {
+        if (o.isSkinnedMesh && o.skeleton) {
+          skeleton = o.skeleton;
+        }
+      });
+
+      if (skeleton) {
+        // Try common names, fallback to first bone
+        testBone =
+          skeleton.getBoneByName("Spine") ||
+          skeleton.getBoneByName("spine") ||
+          skeleton.getBoneByName("Chest") ||
+          skeleton.bones[0];
+      }
+
       mesh.position.set(
         characterBody.position.x,
         characterBody.position.y + MODEL_Y_OFFSET,
@@ -308,9 +378,16 @@ const App = () => {
         0,
       );
 
-      // Neutralise la gravité
-      characterBody.mass = 0;
-      characterBody.updateMassProperties();
+      boneState = BoneState.DRAG;
+      dragTarget.set(
+        characterBody.position.x,
+        characterBody.position.y,
+        characterBody.position.z,
+      );
+
+      // Neutralise la gravité (REMOVED)
+      // characterBody.mass = 0;
+      // characterBody.updateMassProperties();
       characterBody.velocity.set(0, 0, 0);
       characterBody.angularVelocity.set(0, 0, 0);
     };
@@ -328,24 +405,28 @@ const App = () => {
         dragPlanePoint,
       );
 
-      // Position du corps = souris + offset
-      characterBody.position.x = mouseWorld.x + dragOffset.x;
-      characterBody.position.y = mouseWorld.y + dragOffset.y;
+      // Position du corps = souris + offset (NO TELEPORT)
+      dragTarget.set(
+        mouseWorld.x + dragOffset.x,
+        mouseWorld.y + dragOffset.y,
+        characterBody.position.z,
+      );
 
-      // Bloque au sol
-      const minY = GROUND_Y + 0.5;
-      if (characterBody.position.y < minY) characterBody.position.y = minY;
+      // Bloque au sol (REMOVED)
+      // const minY = GROUND_Y + 0.5;
+      // if (characterBody.position.y < minY) characterBody.position.y = minY;
 
-      clampByModelEdges();
+      // clampByModelEdges(); (REMOVED)
     };
 
     const onMouseUp = () => {
       if (!isDragging) return;
       isDragging = false;
 
-      // Remet la masse → gravité reprend
-      characterBody.mass = 1;
-      characterBody.updateMassProperties();
+      // Remet la masse → gravité reprend (REMOVED)
+      // characterBody.mass = 1;
+      // characterBody.updateMassProperties();
+      boneState = BoneState.RECOVER;
     };
 
     // ─────────────────────────────────────────
@@ -383,14 +464,54 @@ const App = () => {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
+      if (boneState === BoneState.DRAG) {
+        applyFollowForce(characterBody, dragTarget);
+      }
+
+      if (boneState === BoneState.RECOVER) {
+        recoverUpright(characterBody);
+
+        if (
+          characterBody.velocity.length() < 0.05 &&
+          characterBody.angularVelocity.length() < 0.05
+        ) {
+          boneState = BoneState.PHYSICS;
+        }
+      }
+
       world.step(1 / 60, dt, 3);
 
-      if (mesh) {
-        mesh.position.set(
-          characterBody.position.x,
-          characterBody.position.y + MODEL_Y_OFFSET,
-          characterBody.position.z,
+      if (boneState !== BoneState.DRAG) {
+        clampByModelEdges();
+      }
+
+      if (testBone) {
+        // Map physics movement to bone rotation (very visible on purpose)
+        const tiltX = THREE.MathUtils.clamp(
+          -characterBody.velocity.y * 0.15,
+          -0.6,
+          0.6,
         );
+
+        const tiltZ = THREE.MathUtils.clamp(
+          characterBody.velocity.x * 0.15,
+          -0.6,
+          0.6,
+        );
+
+        // Smooth interpolation
+        testBone.rotation.x += (tiltX - testBone.rotation.x) * 0.15;
+        testBone.rotation.z += (tiltZ - testBone.rotation.z) * 0.15;
+      }
+
+      if (mesh) {
+        // Mesh stays centered, bones animate inside
+        mesh.position.y = characterBody.position.y + MODEL_Y_OFFSET;
+        // mesh.position.set(
+        //   characterBody.position.x,
+        //   characterBody.position.y + MODEL_Y_OFFSET,
+        //   characterBody.position.z,
+        // );
       }
 
       updateLightTarget();
