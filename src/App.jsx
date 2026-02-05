@@ -445,7 +445,7 @@ const App = () => {
       if (headBone) {
         const headWorldPos = new THREE.Vector3();
         headBone.getWorldPosition(headWorldPos);
-        const HEAD_RADIUS = 0.35;
+        const HEAD_RADIUS = 0.7;
         return hitPoint.distanceTo(headWorldPos) < HEAD_RADIUS;
       }
 
