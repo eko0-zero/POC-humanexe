@@ -5,7 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { World, Vec3, Body, Plane, Box } from "cannon-es";
 
 // Chemin d'accès au modèle 3D
-const MODEL_PATH = new URL("./assets/3D/base.glb", import.meta.url).href;
+const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
 // Position Y du sol
 const GROUND_Y = -1;
 // Décalage vertical du modèle par rapport au corps physique
@@ -331,6 +331,30 @@ const App = () => {
     let modelSize = new THREE.Vector3(1, 1, 1);
     let skeleton = null;
     let testBone = null;
+    let headBone = null;
+    let leftArmBoneTop = null;
+    let leftArmBone = null;
+    let rightArmBoneTop = null;
+    let rightArmBone = null;
+    const leftArmRest = new THREE.Euler();
+    const leftArmRestTop = new THREE.Euler();
+    const rightArmRest = new THREE.Euler();
+    const rightArmRestTop = new THREE.Euler();
+
+    // État du ressort pour l'animation procédurale des bras
+    // Ressort séparé pour les bras avant (bottom) et arrière (top)
+    const armSpringBottom = {
+      angleZ: 0,
+      velZ: 0,
+      angleX: 0,
+      velX: 0,
+    };
+    const armSpringTop = {
+      angleZ: 0,
+      velZ: 0,
+      angleX: 0,
+      velX: 0,
+    };
 
     // Position initiale du maillage
     mesh.position.set(
@@ -360,6 +384,25 @@ const App = () => {
           skeleton.getBoneByName("spine") ||
           skeleton.getBoneByName("Chest") ||
           skeleton.bones[0];
+        console.log(skeleton.bones.map((bone) => bone.name));
+
+        // Cherche l'os de la tête pour limiter le drag
+        headBone =
+          skeleton.getBoneByName("head") ||
+          skeleton.getBoneByName("Head") ||
+          skeleton.getBoneByName("mixamorigHead");
+
+        // Cherche les os des bras pour l'animation procédurale
+        rightArmBoneTop = skeleton.getBoneByName("body001");
+        rightArmBone = skeleton.getBoneByName("body002");
+        leftArmBoneTop = skeleton.getBoneByName("top-armr_1");
+        leftArmBone = skeleton.getBoneByName("bottom-armr");
+
+        // Sauvegarde les rotations de repos des bras
+        if (leftArmBone) leftArmRest.copy(leftArmBone.rotation);
+        if (leftArmBoneTop) leftArmRestTop.copy(leftArmBoneTop.rotation);
+        if (rightArmBone) rightArmRest.copy(rightArmBone.rotation);
+        if (rightArmBoneTop) rightArmRestTop.copy(rightArmBoneTop.rotation);
       }
 
       // Repositionne le maillage après chargement
@@ -387,13 +430,29 @@ const App = () => {
     };
 
     /**
-     * Vérifie si la souris est sur le modèle
+     * Vérifie si la souris est sur la tête du modèle
      */
-    const isOverModel = (clientX, clientY) => {
+    const isOverHead = (clientX, clientY) => {
       if (!mesh) return false;
       screenToNDC(clientX, clientY);
       raycaster.setFromCamera(mouse, camera);
-      return raycaster.intersectObjects([mesh], true).length > 0;
+      const intersects = raycaster.intersectObjects([mesh], true);
+      if (intersects.length === 0) return false;
+
+      const hitPoint = intersects[0].point;
+
+      // Si l'os de la tête est disponible, vérifie la distance au centre de la tête
+      if (headBone) {
+        const headWorldPos = new THREE.Vector3();
+        headBone.getWorldPosition(headWorldPos);
+        const HEAD_RADIUS = 0.35;
+        return hitPoint.distanceTo(headWorldPos) < HEAD_RADIUS;
+      }
+
+      // Fallback : vérifie si le point touché est dans le quart supérieur du modèle
+      const headThresholdY =
+        characterBody.position.y + MODEL_Y_OFFSET + modelSize.y * 0.7;
+      return hitPoint.y >= headThresholdY;
     };
 
     /**
@@ -470,8 +529,8 @@ const App = () => {
      */
     const onMouseDown = (e) => {
       const { clientX, clientY } = getClientPos(e);
-      // Vérifie que le clic est sur le modèle
-      if (!isOverModel(clientX, clientY)) return;
+      // Vérifie que le clic est sur la tête du modèle
+      if (!isOverHead(clientX, clientY)) return;
 
       isDragging = true;
       boneState = BoneState.DRAG;
@@ -674,6 +733,93 @@ const App = () => {
         // Interpole progressivement vers les rotations désirées
         testBone.rotation.x += (tiltX - testBone.rotation.x) * 0.15;
         testBone.rotation.z += (tiltZ - testBone.rotation.z) * 0.15;
+      }
+
+      // === Animation procédurale des bras (ressort) ===
+      if (leftArmBone || rightArmBone || leftArmBoneTop || rightArmBoneTop) {
+        const MAX_ARM_ANGLE = 1.2;
+
+        // Cibles communes basées sur la vélocité du corps
+        const targetZ = THREE.MathUtils.clamp(
+          -characterBody.velocity.x * 0.5,
+          -MAX_ARM_ANGLE,
+          MAX_ARM_ANGLE,
+        );
+        const targetX = THREE.MathUtils.clamp(
+          characterBody.velocity.y * 0.3,
+          -MAX_ARM_ANGLE,
+          MAX_ARM_ANGLE,
+        );
+
+        // --- Bras avant (bottom) : plus réactifs ---
+        const BOT_STIFFNESS = 45;
+        const BOT_DAMPING = 6;
+
+        const fBotZ =
+          (targetZ - armSpringBottom.angleZ) * BOT_STIFFNESS -
+          armSpringBottom.velZ * BOT_DAMPING;
+        armSpringBottom.velZ += fBotZ * dt;
+        armSpringBottom.angleZ += armSpringBottom.velZ * dt;
+        armSpringBottom.angleZ = THREE.MathUtils.clamp(
+          armSpringBottom.angleZ,
+          -MAX_ARM_ANGLE,
+          MAX_ARM_ANGLE,
+        );
+
+        const fBotX =
+          (targetX - armSpringBottom.angleX) * BOT_STIFFNESS -
+          armSpringBottom.velX * BOT_DAMPING;
+        armSpringBottom.velX += fBotX * dt;
+        armSpringBottom.angleX += armSpringBottom.velX * dt;
+        armSpringBottom.angleX = THREE.MathUtils.clamp(
+          armSpringBottom.angleX,
+          -MAX_ARM_ANGLE,
+          MAX_ARM_ANGLE,
+        );
+
+        // --- Bras arrière (top) : plus mous / floppy ---
+        const TOP_STIFFNESS = 30;
+        const TOP_DAMPING = 4;
+
+        const fTopZ =
+          (targetZ - armSpringTop.angleZ) * TOP_STIFFNESS -
+          armSpringTop.velZ * TOP_DAMPING;
+        armSpringTop.velZ += fTopZ * dt;
+        armSpringTop.angleZ += armSpringTop.velZ * dt;
+        armSpringTop.angleZ = THREE.MathUtils.clamp(
+          armSpringTop.angleZ,
+          -MAX_ARM_ANGLE,
+          MAX_ARM_ANGLE,
+        );
+
+        const fTopX =
+          (targetX - armSpringTop.angleX) * TOP_STIFFNESS -
+          armSpringTop.velX * TOP_DAMPING;
+        armSpringTop.velX += fTopX * dt;
+        armSpringTop.angleX += armSpringTop.velX * dt;
+        armSpringTop.angleX = THREE.MathUtils.clamp(
+          armSpringTop.angleX,
+          -MAX_ARM_ANGLE,
+          MAX_ARM_ANGLE,
+        );
+
+        // Applique les rotations (repos + offset du ressort)
+        if (leftArmBone) {
+          leftArmBone.rotation.x = leftArmRest.x + armSpringBottom.angleX;
+          leftArmBone.rotation.z = leftArmRest.z + armSpringBottom.angleZ;
+        }
+        if (rightArmBone) {
+          rightArmBone.rotation.x = rightArmRest.x + armSpringBottom.angleX;
+          rightArmBone.rotation.z = rightArmRest.z - armSpringBottom.angleZ;
+        }
+        if (leftArmBoneTop) {
+          leftArmBoneTop.rotation.x = leftArmRestTop.x + armSpringTop.angleX;
+          leftArmBoneTop.rotation.z = leftArmRestTop.z + armSpringTop.angleZ;
+        }
+        if (rightArmBoneTop) {
+          rightArmBoneTop.rotation.x = rightArmRestTop.x + armSpringTop.angleX;
+          rightArmBoneTop.rotation.z = rightArmRestTop.z - armSpringTop.angleZ;
+        }
       }
 
       // === Mise à jour de la position du maillage ===
