@@ -3,6 +3,7 @@ import "./App.css";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { World, Vec3, Body, Plane, Box } from "cannon-es";
+import ButtonAddItem from "./ui/ButtonAddItem"; // ← Importez le composant
 
 // Chemin d'accès au modèle 3D
 const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
@@ -879,6 +880,7 @@ const App = () => {
   return (
     <main className="relative w-full h-screen">
       <h1 className="absolute p-5">Human.exe POC</h1>
+      <ButtonAddItem />
       <canvas ref={canvasRef} />
     </main>
   );
