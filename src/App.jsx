@@ -6,7 +6,7 @@ import { World, Vec3, Body, Plane, Box } from "cannon-es";
 import ButtonAddItem from "./ui/ButtonAddItem"; // ← Importez le composant
 
 // Chemin d'accès au modèle 3D
-const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
+const MODEL_PATH = new URL("./assets/3D/new.glb", import.meta.url).href;
 // Position Y du sol
 const GROUND_Y = -1;
 // Décalage vertical du modèle par rapport au corps physique
