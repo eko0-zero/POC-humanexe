@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { World, Vec3, Body, Plane, Box } from "cannon-es";
 import ButtonAddItem from "./ui/ButtonAddItem";
-import Trash from "./ui/trash";
+import Trash from "./ui/Trash";
 
 // Chemin d'accès au modèle 3D
 const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
@@ -760,6 +760,7 @@ const App = () => {
           camera={cameraRef.current}
           spawnedItems={spawnedItemsRef}
           world={worldRef.current}
+          renderer={rendererRef.current}
         />
       )}
       <canvas ref={canvasRef} />
