@@ -1,8 +1,11 @@
+// ButtonAddItem.jsx
+// Gestion du spawn, drag & drop et lancer d’objets avec Three.js + Cannon-es
 import { useRef, useCallback, useState, useEffect } from "react";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 import { Body, Box, Vec3, Material, ContactMaterial } from "cannon-es";
 
+// Matériau physique partagé par tous les items (friction / rebond)
 const ITEM_MATERIAL = new Material("itemMaterial");
 
 const SPAWNED_ITEM_PATH = new URL("../assets/3D/cube.glb", import.meta.url)
@@ -10,6 +13,8 @@ const SPAWNED_ITEM_PATH = new URL("../assets/3D/cube.glb", import.meta.url)
 const GROUND_Y = -1;
 
 let contactMaterialAdded = false;
+// Assure que le ContactMaterial (item ↔ item) n’est ajouté qu’une seule fois au world
+// Définit comment deux items interagissent physiquement (friction, restitution)
 function ensureContactMaterial(world) {
   if (contactMaterialAdded) return;
   const contact = new ContactMaterial(ITEM_MATERIAL, ITEM_MATERIAL, {
@@ -24,6 +29,7 @@ function ensureContactMaterial(world) {
 
 async function createSpawnedItem(scene, world, position) {
   return new Promise((resolve, reject) => {
+    // Charge le modèle 3D de l’item
     const loader = new GLTFLoader();
     loader.load(
       SPAWNED_ITEM_PATH,
@@ -45,6 +51,7 @@ async function createSpawnedItem(scene, world, position) {
 
         scene.add(model);
 
+        // Calcule la bounding box du mesh pour créer un collider physique cohérent
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const boxMin = box.min;
@@ -64,6 +71,7 @@ async function createSpawnedItem(scene, world, position) {
 
         ensureContactMaterial(world);
 
+        // Création du body physique Cannon associé au mesh Three.js
         const body = new Body({
           mass: 1,
           material: ITEM_MATERIAL,
@@ -86,7 +94,7 @@ async function createSpawnedItem(scene, world, position) {
 
         world.addBody(body);
 
-        // Stocke les informations de physique smooth
+        // Données regroupant le mesh Three + le body Cannon pour la logique d’interaction
         const itemData = {
           mesh: model,
           body,
@@ -133,6 +141,7 @@ export default function ButtonAddItem({
   const lastMousePosRef = useRef(new THREE.Vector3());
   const mouseVelocityRef = useRef(new THREE.Vector3());
 
+  // Convertit les coordonnées écran (pixels) en coordonnées normalisées (-1 à 1)
   const screenToNDC = useCallback(
     (clientX, clientY) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -142,6 +151,8 @@ export default function ButtonAddItem({
     [renderer],
   );
 
+  // Projette la souris sur un plan perpendiculaire à la caméra
+  // Permet de récupérer une position monde stable pour le drag
   const getMouseOnPlane = useCallback(
     (clientX, clientY, planePoint) => {
       screenToNDC(clientX, clientY);
@@ -159,6 +170,7 @@ export default function ButtonAddItem({
     [camera, screenToNDC],
   );
 
+  // Raycast pour détecter quel item est sous la souris
   const getItemUnderMouse = useCallback(
     (clientX, clientY) => {
       if (!spawnedItems.current.length) return null;
@@ -186,6 +198,8 @@ export default function ButtonAddItem({
     [spawnedItems, camera, screenToNDC],
   );
 
+  // Empêche les items de sortir de l’écran
+  // Applique un léger rebond lorsqu’un item touche les limites
   const clampItemWithinBounds = useCallback(
     (item) => {
       const bounds = getViewBounds();
@@ -236,6 +250,7 @@ export default function ButtonAddItem({
 
       draggedItemRef.current = item;
       item.isBeingDragged = true;
+      // Passe en mode KINEMATIC pour suivre la souris sans subir la physique
       item.body.type = Body.KINEMATIC;
       item.body.updateMassProperties();
       dragPlanePointRef.current.copy(item.body.position);
@@ -309,7 +324,7 @@ export default function ButtonAddItem({
           }
         }
 
-        // Track la vélocité de la souris pour le lancer
+        // Calcul de la vélocité de la souris pour déterminer la force du lancer
         const currentMousePos = new THREE.Vector3(desiredX, desiredY, 0);
         mouseVelocityRef.current.subVectors(
           currentMousePos,
@@ -317,7 +332,7 @@ export default function ButtonAddItem({
         );
         lastMousePosRef.current.copy(currentMousePos);
 
-        // Stick to mouse while dragging (no lag)
+        // Pendant le drag, l’objet reste collé à la souris (pas d’inertie)
         item.body.position.x = desiredX;
         item.body.position.y = desiredY;
         item.body.position.z = 0;
@@ -335,11 +350,12 @@ export default function ButtonAddItem({
       item.body.type = Body.DYNAMIC;
       item.body.updateMassProperties();
 
+      // Déclenche le lancer uniquement si le geste est suffisamment rapide
       const velocity = mouseVelocityRef.current.length();
       const minThrowSpeed = 0.015;
 
       if (velocity > minThrowSpeed) {
-        // Non‑linear throw curve: small gesture = light throw, fast gesture = real throw
+        // Applique un impulse physique pour simuler le lancer
         const strength = THREE.MathUtils.clamp(velocity * 14, 1.2, 6);
 
         item.body.applyImpulse(
@@ -391,6 +407,7 @@ export default function ButtonAddItem({
     };
   }, [onMouseDown, onMouseMove, onMouseUp, renderer]);
 
+  // Exposé global pour appeler le clamp à chaque frame depuis la loop principale
   useEffect(() => {
     window.clampSpawnedItemsWithinBounds = () => {
       spawnedItems.current.forEach((item) => {

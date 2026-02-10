@@ -5,22 +5,25 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { World, Vec3, Body, Plane, Box } from "cannon-es";
 import ButtonAddItem from "./ui/ButtonAddItem";
 
-// Chemin d'accès au modèle 3D
+// Constantes de configuration :
+// - MODEL_PATH : chemin du modèle 3D principal
+// - GROUND_Y : hauteur du sol
+// - MODEL_Y_OFFSET : décalage vertical du mesh par rapport au corps physique
+// - HEAD_OFFSET_Y : décalage vertical de la tête pour les interactions
 const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
-// Position Y du sol
 const GROUND_Y = -1;
-// Décalage vertical du modèle par rapport au corps physique
 const MODEL_Y_OFFSET = -0.5;
-// Décalage vertical de la tête par rapport au centre du corps
 const HEAD_OFFSET_Y = 0.6;
 
-// Énumération des états possibles du corps/os
+// États possibles du corps pour gérer la physique et l'interaction
 const BoneState = {
   PHYSICS: "physics",
   DRAG: "drag",
   RECOVER: "recover",
 };
 
+// Fonction pour redresser le corps du personnage progressivement
+// Applique un lerp sur la rotation et un damping sur la vélocité
 function recoverUpright(body) {
   const uprightQuat = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(0, 0, 0),
@@ -46,6 +49,7 @@ function recoverUpright(body) {
   body.angularVelocity.scale(0.92, body.angularVelocity);
 }
 
+// Création d'une caméra perspective
 function createCamera(aspect) {
   const camera = new THREE.PerspectiveCamera(55, aspect);
   camera.position.set(0, 0.8, 3);
@@ -53,6 +57,7 @@ function createCamera(aspect) {
   return camera;
 }
 
+// Création du renderer Three.js avec ombres et antialiasing
 function createRenderer(canvas, width, height) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.shadowMap.enabled = true;
@@ -62,6 +67,7 @@ function createRenderer(canvas, width, height) {
   return renderer;
 }
 
+// Ajoute des lumières à la scène : ambiante + directionnelle avec ombres
 function createLights(scene) {
   const ambient = new THREE.AmbientLight(0xffffff, 2.5);
   scene.add(ambient);
@@ -83,6 +89,7 @@ function createLights(scene) {
   return { ambient, dirLight };
 }
 
+// Crée un plan représentant le sol dans la scène Three.js
 function createGround(scene) {
   const geometry = new THREE.PlaneGeometry(10, 10);
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
@@ -94,6 +101,7 @@ function createGround(scene) {
   return plane;
 }
 
+// Cube temporaire affiché pendant le chargement du modèle
 function createPlaceholderCube(scene) {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
   const material = new THREE.MeshPhongMaterial({ color: 0x0000ff });
@@ -103,6 +111,8 @@ function createPlaceholderCube(scene) {
   return cube;
 }
 
+// Charge le modèle 3D principal et remplace le placeholder
+// Applique les réglages de matériau et scale
 function loadModel(scene, placeholderCube) {
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
@@ -138,6 +148,7 @@ function loadModel(scene, placeholderCube) {
   });
 }
 
+// Initialise le monde physique Cannon-es avec gravité et solver
 function createPhysicsWorld() {
   const world = new World({
     gravity: new Vec3(0, -9.82, 0),
@@ -146,6 +157,7 @@ function createPhysicsWorld() {
   return world;
 }
 
+// Body physique du sol (immobile, masse = 0)
 function createGroundBody() {
   const shape = new Plane();
   const body = new Body({ mass: 0 });
@@ -155,20 +167,35 @@ function createGroundBody() {
   return body;
 }
 
+// Crée le body physique principal du personnage
+// Ce body est utilisé par Cannon-es pour gérer la gravité, les collisions et les forces
 function createCharacterBody(startY) {
+  // Demi-dimensions du collider (Box)
+  // → largeur / hauteur / profondeur ÷ 2
+  // Ces valeurs définissent la "boîte invisible" utilisée pour les collisions
   const halfExtents = new Vec3(0.4, 0.5, 0.3);
+  // Shape de collision de type boîte, basée sur les halfExtents
   const shape = new Box(halfExtents);
+  // Création du body dynamique :
+  // - mass : influence la gravité et les forces
+  // - linearDamping : ralentit les déplacements (anti-glissade)
+  // - angularDamping : ralentit les rotations
+  // - restitution : rebond (0 = pas de rebond)
   const body = new Body({
     mass: 1,
     linearDamping: 0.15,
     angularDamping: 0.4,
     restitution: 0,
   });
+  // Associe la shape de collision au body
   body.addShape(shape);
+  // Position initiale du personnage dans le monde physique
   body.position.set(0, startY, 0);
   return body;
 }
 
+// Calcule la position dans le monde correspondant à la souris
+// en projetant sur un plan passant par planePoint
 function getMouseOnPlane(clientX, clientY, camera, renderer, planePoint) {
   const rect = renderer.domElement.getBoundingClientRect();
   const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -203,11 +230,10 @@ const App = () => {
   useEffect(() => {
     if (!canvasRef.current) return;
 
+    // === Initialisation Three.js : scène, caméra, renderer, lumières, sol ===
     const canvas = canvasRef.current;
     const width = window.innerWidth;
     const height = window.innerHeight;
-
-    // === Initialisation Three.js ===
     const scene = new THREE.Scene();
     const camera = createCamera(width / height);
     const renderer = createRenderer(canvas, width, height);
@@ -219,20 +245,18 @@ const App = () => {
     cameraRef.current = camera;
     rendererRef.current = renderer;
 
-    // === Initialisation physique ===
+    // === Initialisation Cannon-es : monde physique, sol, personnage ===
     const world = createPhysicsWorld();
     worldRef.current = world;
-
     const groundBody = createGroundBody();
     world.addBody(groundBody);
-
     const characterBody = createCharacterBody(GROUND_Y + 2);
     world.addBody(characterBody);
     characterBodyRef.current = characterBody;
 
+    // Variables d'état et références pour la gestion du personnage
     let boneState = BoneState.PHYSICS;
     const desiredHeadPos = new THREE.Vector3(0, 1, 0);
-
     const placeholder = createPlaceholderCube(scene);
     let mesh = placeholder;
     let modelSize = new THREE.Vector3(1, 1, 1);
@@ -247,7 +271,6 @@ const App = () => {
     const leftArmRestTop = new THREE.Euler();
     const rightArmRest = new THREE.Euler();
     const rightArmRestTop = new THREE.Euler();
-
     const armSpringBottom = { angleZ: 0, velZ: 0, angleX: 0, velX: 0 };
     const armSpringTop = { angleZ: 0, velZ: 0, angleX: 0, velX: 0 };
 
@@ -257,7 +280,7 @@ const App = () => {
       characterBody.position.z,
     );
 
-    // === Chargement du modèle principal ===
+    // === Chargement du modèle 3D principal ===
     loadModel(scene, placeholder)
       .then((model) => {
         mesh = model;
@@ -312,16 +335,18 @@ const App = () => {
 
     renderer.render(scene, camera);
 
-    // === Raycasting ===
+    // === Gestion de l'interaction souris (drag & drop, raycasting) ===
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
+    // Conversion coordonnées écran vers coordonnées NDC
     const screenToNDC = (clientX, clientY) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     };
 
+    // Vérifie si la souris est sur la tête du personnage
     const isOverHead = (clientX, clientY) => {
       if (!mesh) return false;
       screenToNDC(clientX, clientY);
@@ -343,6 +368,7 @@ const App = () => {
       return hitPoint.y >= headThresholdY;
     };
 
+    // Calcule les bords visibles de la caméra (limites pour le personnage)
     const getViewBounds = () => {
       const distance = camera.position.z - mesh.position.z;
       const vFov = THREE.MathUtils.degToRad(camera.fov);
@@ -351,6 +377,7 @@ const App = () => {
       return { halfW: viewWidth / 2, halfH: viewHeight / 2 };
     };
 
+    // Applique les limites de l'écran au personnage
     const clampCharacterWithinBounds = () => {
       if (!mesh) return;
 
@@ -361,7 +388,6 @@ const App = () => {
 
       const minX = -halfW + halfModelW * 0.5;
       const maxX = halfW - halfModelW * 0.5;
-
       const minY = GROUND_Y + bodyHalfHeight;
       const maxY = halfH - modelHeight / 4;
 
@@ -387,10 +413,12 @@ const App = () => {
       }
     };
 
+    // Variables pour le drag & drop
     let isDragging = false;
     const dragPlanePoint = new THREE.Vector3();
     const dragOffset = new THREE.Vector3();
 
+    // Récupère la position client (souris ou doigt)
     const getClientPos = (e) => {
       if (e.touches && e.touches.length > 0) {
         return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
@@ -398,6 +426,7 @@ const App = () => {
       return { clientX: e.clientX, clientY: e.clientY };
     };
 
+    // Début du drag sur la tête
     const onMouseDown = (e) => {
       const { clientX, clientY } = getClientPos(e);
       if (!isOverHead(clientX, clientY)) return;
@@ -406,7 +435,6 @@ const App = () => {
       boneState = BoneState.DRAG;
 
       const headWorldY = characterBody.position.y + HEAD_OFFSET_Y;
-
       dragPlanePoint.set(
         characterBody.position.x,
         headWorldY,
@@ -431,10 +459,10 @@ const App = () => {
       characterBody.angularVelocity.set(0, 0, 0);
     };
 
+    // Drag en cours : mise à jour de la position désirée
     const onMouseMove = (e) => {
       if (!isDragging) return;
       const { clientX, clientY } = getClientPos(e);
-
       const headWorldY = characterBody.position.y + HEAD_OFFSET_Y;
       dragPlanePoint.set(
         characterBody.position.x,
@@ -463,7 +491,6 @@ const App = () => {
         -halfW + halfModelW * 0.5,
         halfW - halfModelW * 0.5,
       );
-
       desiredHeadPos.y = THREE.MathUtils.clamp(
         desiredHeadPos.y,
         -halfH + modelHeight / 2,
@@ -471,14 +498,16 @@ const App = () => {
       );
     };
 
+    // Fin du drag
     const onMouseUp = () => {
       if (!isDragging) return;
       isDragging = false;
       boneState = BoneState.RECOVER;
     };
 
+    // Empêche le comportement par défaut du dragover
     const onDragOver = (e) => e.preventDefault();
-
+    // Drop sur la scène (à adapter si besoin)
     const onDrop = (e) => {
       e.preventDefault();
       if (!mesh) return;
@@ -487,54 +516,48 @@ const App = () => {
       raycaster.intersectObjects([mesh], true);
     };
 
+    // Mise à jour de la cible de la lumière directionnelle
     const updateLightTarget = () => {
       if (!mesh) return;
       dirLight.target.position.copy(mesh.position);
       dirLight.target.updateMatrixWorld();
     };
 
-    // === Boucle d'animation ===
+    // === Boucle d'animation principale ===
     let animId;
     let lastTime = performance.now();
-
     const animate = () => {
       animId = requestAnimationFrame(animate);
-
       const now = performance.now();
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
+      // Si le personnage est en mode drag : appliquer un spring vers la position souhaitée
       if (boneState === BoneState.DRAG) {
         const bodyHalfHeight = 0.5;
         const minY = GROUND_Y + bodyHalfHeight;
-
         const stiffness = 600;
         const damping = 50;
-
         const currentHeadX = characterBody.position.x;
         const currentHeadY = characterBody.position.y + HEAD_OFFSET_Y;
-
         const diffX = desiredHeadPos.x - currentHeadX;
         const diffY = desiredHeadPos.y - currentHeadY;
-
         if (characterBody.position.y <= minY) {
           characterBody.position.y = minY;
           characterBody.velocity.y = 0;
-
           const forceX = diffX * stiffness - characterBody.velocity.x * damping;
           characterBody.velocity.x += (forceX / characterBody.mass) * dt;
         } else {
           const forceX = diffX * stiffness - characterBody.velocity.x * damping;
           const forceY = diffY * stiffness - characterBody.velocity.y * damping;
-
           characterBody.velocity.x += (forceX / characterBody.mass) * dt;
           characterBody.velocity.y += (forceY / characterBody.mass) * dt;
         }
       }
 
+      // Si le personnage est en mode recover : redresser progressivement
       if (boneState === BoneState.RECOVER) {
         recoverUpright(characterBody);
-
         if (
           characterBody.velocity.length() < 0.05 &&
           characterBody.angularVelocity.length() < 0.05
@@ -544,31 +567,28 @@ const App = () => {
       }
 
       world.step(1 / 60, dt, 3);
-
       characterBody.position.z = 0;
-
       clampCharacterWithinBounds();
 
+      // Animation du "spine" en fonction de la vélocité
       if (testBone) {
         const tiltX = THREE.MathUtils.clamp(
           -characterBody.velocity.y * 0.15,
           -0.6,
           0.6,
         );
-
         const tiltZ = THREE.MathUtils.clamp(
           characterBody.velocity.x * 0.15,
           -0.6,
           0.6,
         );
-
         testBone.rotation.x += (tiltX - testBone.rotation.x) * 0.15;
         testBone.rotation.z += (tiltZ - testBone.rotation.z) * 0.15;
       }
 
+      // Animation des bras avec un système de ressort (spring)
       if (leftArmBone || rightArmBone || leftArmBoneTop || rightArmBoneTop) {
         const MAX_ARM_ANGLE = 1.2;
-
         const targetZ = THREE.MathUtils.clamp(
           -characterBody.velocity.x * 0.5,
           -MAX_ARM_ANGLE,
@@ -579,10 +599,8 @@ const App = () => {
           -MAX_ARM_ANGLE,
           MAX_ARM_ANGLE,
         );
-
         const BOT_STIFFNESS = 45;
         const BOT_DAMPING = 6;
-
         const fBotZ =
           (targetZ - armSpringBottom.angleZ) * BOT_STIFFNESS -
           armSpringBottom.velZ * BOT_DAMPING;
@@ -593,7 +611,6 @@ const App = () => {
           -MAX_ARM_ANGLE,
           MAX_ARM_ANGLE,
         );
-
         const fBotX =
           (targetX - armSpringBottom.angleX) * BOT_STIFFNESS -
           armSpringBottom.velX * BOT_DAMPING;
@@ -604,10 +621,8 @@ const App = () => {
           -MAX_ARM_ANGLE,
           MAX_ARM_ANGLE,
         );
-
         const TOP_STIFFNESS = 30;
         const TOP_DAMPING = 4;
-
         const fTopZ =
           (targetZ - armSpringTop.angleZ) * TOP_STIFFNESS -
           armSpringTop.velZ * TOP_DAMPING;
@@ -618,7 +633,6 @@ const App = () => {
           -MAX_ARM_ANGLE,
           MAX_ARM_ANGLE,
         );
-
         const fTopX =
           (targetX - armSpringTop.angleX) * TOP_STIFFNESS -
           armSpringTop.velX * TOP_DAMPING;
@@ -629,7 +643,6 @@ const App = () => {
           -MAX_ARM_ANGLE,
           MAX_ARM_ANGLE,
         );
-
         if (leftArmBone) {
           leftArmBone.rotation.x = leftArmRest.x + armSpringBottom.angleX;
           leftArmBone.rotation.z = leftArmRest.z + armSpringBottom.angleZ;
@@ -648,44 +661,40 @@ const App = () => {
         }
       }
 
+      // Synchronisation position mesh <-> body physique
       if (mesh) {
         mesh.position.x = characterBody.position.x;
         mesh.position.y = characterBody.position.y + MODEL_Y_OFFSET;
         mesh.position.z = characterBody.position.z;
       }
 
-      // === Mise à jour des objets spawés ===
+      // === Mise à jour de la physique des items spawés ===
       spawnedItemsRef.current.forEach((item) => {
-        // Applique la physique spring SEULEMENT pendant le drag
+        // Application du spring si nécessaire, verrouillage de Z, synchronisation mesh/body
         if (item.useSpring && !item.isBeingDragged) {
           const diffX = item.desiredX - item.body.position.x;
           const diffY = item.desiredY - item.body.position.y;
-
           const forceX =
             diffX * item.springStiffness -
             item.body.velocity.x * item.springDamping;
           const forceY =
             diffY * item.springStiffness -
             item.body.velocity.y * item.springDamping;
-
           item.body.velocity.x += (forceX / item.body.mass) * dt;
           item.body.velocity.y += (forceY / item.body.mass) * dt;
-
           // Met à jour la position désirée vers la position actuelle
           item.desiredX = item.body.position.x;
           item.desiredY = item.body.position.y;
         }
-
         // Verrouille l'axe Z à 0 (vue de face)
         item.body.position.z = 0;
         item.body.velocity.z = 0;
         item.body.angularVelocity.z = 0;
-
         item.mesh.position.copy(item.body.position);
         item.mesh.quaternion.copy(item.body.quaternion);
       });
 
-      // Applique les limites aux items spawés
+      // Appliquer les limites de l'écran aux items
       if (window.clampSpawnedItemsWithinBounds) {
         window.clampSpawnedItemsWithinBounds();
       }
@@ -695,12 +704,14 @@ const App = () => {
     };
     animate();
 
+    // Resize de la fenêtre : adapte la caméra et le renderer
     const onResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
 
+    // Écouteurs d'événements pour l'interaction
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -711,6 +722,7 @@ const App = () => {
     renderer.domElement.addEventListener("dragover", onDragOver);
     renderer.domElement.addEventListener("drop", onDrop);
 
+    // Nettoyage à la destruction du composant
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener("mousedown", onMouseDown);
