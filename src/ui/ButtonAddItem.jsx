@@ -1,11 +1,26 @@
 import { useRef, useCallback, useState, useEffect } from "react";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
-import { Body, Box, Vec3 } from "cannon-es";
+import { Body, Box, Vec3, Material, ContactMaterial } from "cannon-es";
+
+const ITEM_MATERIAL = new Material("itemMaterial");
 
 const SPAWNED_ITEM_PATH = new URL("../assets/3D/cube.glb", import.meta.url)
   .href;
 const GROUND_Y = -1;
+
+let contactMaterialAdded = false;
+function ensureContactMaterial(world) {
+  if (contactMaterialAdded) return;
+  const contact = new ContactMaterial(ITEM_MATERIAL, ITEM_MATERIAL, {
+    friction: 0.6,
+    restitution: 0.25,
+    contactEquationStiffness: 1e7,
+    contactEquationRelaxation: 3,
+  });
+  world.addContactMaterial(contact);
+  contactMaterialAdded = true;
+}
 
 async function createSpawnedItem(scene, world, position) {
   return new Promise((resolve, reject) => {
@@ -46,13 +61,21 @@ async function createSpawnedItem(scene, world, position) {
         );
 
         const shape = new Box(halfExtents);
+
+        ensureContactMaterial(world);
+
         const body = new Body({
           mass: 1,
-          linearDamping: 0.15,
-          angularDamping: 0.4,
-          restitution: 0,
+          material: ITEM_MATERIAL,
+          linearDamping: 0.4,
+          angularDamping: 0.8,
+          restitution: 0.25,
+          collisionResponse: true,
         });
         body.addShape(shape);
+
+        body.collisionFilterGroup = 1;
+        body.collisionFilterMask = 1;
 
         // Positionne le body pour que le sol soit au GROUND_Y
         body.position.set(
@@ -170,65 +193,32 @@ export default function ButtonAddItem({
 
       const { halfW, halfH } = bounds;
       const halfItemW = item.size.x / 2;
-      const itemHeight = item.size.y;
       const bodyHalfHeight = item.size.y / 2;
 
       const minX = -halfW + halfItemW * 0.5;
       const maxX = halfW - halfItemW * 0.5;
-      const minY = GROUND_Y + bodyHalfHeight; // Le sol
-      const maxY = halfH - itemHeight / 4;
+      const minY = GROUND_Y + bodyHalfHeight;
+      const maxY = halfH - item.size.y / 4;
 
-      let newX = THREE.MathUtils.clamp(item.body.position.x, minX, maxX);
-      let newY = THREE.MathUtils.clamp(item.body.position.y, minY, maxY);
+      // X bounds with rebound
+      if (item.body.position.x < minX) {
+        item.body.position.x = minX;
+        item.body.velocity.x *= -0.4;
+      } else if (item.body.position.x > maxX) {
+        item.body.position.x = maxX;
+        item.body.velocity.x *= -0.4;
+      }
 
-      // Empêche de traverser le sol
+      // Y bounds with rebound
       if (item.body.position.y < minY) {
         item.body.position.y = minY;
-        item.body.velocity.y = 0; // Arrête la vélocité vers le bas
+        item.body.velocity.y *= -0.4;
+      } else if (item.body.position.y > maxY) {
+        item.body.position.y = maxY;
+        item.body.velocity.y *= -0.4;
       }
 
-      // Vérifie collision avec le personnage
-      if (characterBody) {
-        const distX = newX - characterBody.position.x;
-        const distY = newY - characterBody.position.y;
-        const distance = Math.sqrt(distX * distX + distY * distY);
-
-        const minDistance = 1.0;
-
-        if (distance < minDistance && distance > 0.01) {
-          const angle = Math.atan2(distY, distX);
-          newX = characterBody.position.x + Math.cos(angle) * minDistance;
-          newY = characterBody.position.y + Math.sin(angle) * minDistance;
-
-          item.body.velocity.x = Math.cos(angle) * 2;
-          item.body.velocity.y = Math.sin(angle) * 2;
-        }
-      }
-
-      // Vérifie collision avec les autres items
-      spawnedItems.current.forEach((otherItem) => {
-        if (otherItem === item) return;
-
-        const distX = newX - otherItem.body.position.x;
-        const distY = newY - otherItem.body.position.y;
-        const distance = Math.sqrt(distX * distX + distY * distY);
-
-        const minDistance = 0.01;
-
-        if (distance < minDistance && distance > 0.001) {
-          const angle = Math.atan2(distY, distX);
-          newX = otherItem.body.position.x + Math.cos(angle) * minDistance;
-          newY = otherItem.body.position.y + Math.sin(angle) * minDistance;
-
-          item.body.velocity.x = Math.cos(angle) * 1.5;
-          item.body.velocity.y = Math.sin(angle) * 1.5;
-        }
-      });
-
-      item.body.position.x = newX;
-      item.body.position.y = newY;
-
-      // Verrouille Z
+      // Lock Z
       item.body.position.z = 0;
       item.body.velocity.z = 0;
     },
@@ -246,6 +236,8 @@ export default function ButtonAddItem({
 
       draggedItemRef.current = item;
       item.isBeingDragged = true;
+      item.body.type = Body.KINEMATIC;
+      item.body.updateMassProperties();
       dragPlanePointRef.current.copy(item.body.position);
 
       const mouseWorld = getMouseOnPlane(
@@ -317,25 +309,6 @@ export default function ButtonAddItem({
           }
         }
 
-        // Vérifier collision avec les autres items
-        spawnedItems.current.forEach((otherItem) => {
-          if (otherItem === item) return;
-
-          const distX = desiredX - otherItem.body.position.x;
-          const distY = desiredY - otherItem.body.position.y;
-          const distance = Math.sqrt(distX * distX + distY * distY);
-
-          const minDistance = 0.01;
-
-          if (distance < minDistance && distance > 0.001) {
-            const angle = Math.atan2(distY, distX);
-            desiredX =
-              otherItem.body.position.x + Math.cos(angle) * minDistance;
-            desiredY =
-              otherItem.body.position.y + Math.sin(angle) * minDistance;
-          }
-        });
-
         // Track la vélocité de la souris pour le lancer
         const currentMousePos = new THREE.Vector3(desiredX, desiredY, 0);
         mouseVelocityRef.current.subVectors(
@@ -344,9 +317,12 @@ export default function ButtonAddItem({
         );
         lastMousePosRef.current.copy(currentMousePos);
 
+        // Stick to mouse while dragging (no lag)
         item.body.position.x = desiredX;
         item.body.position.y = desiredY;
         item.body.position.z = 0;
+
+        item.body.velocity.set(0, 0, 0);
       }
     },
     [getMouseOnPlane, getViewBounds, characterBody, spawnedItems],
@@ -356,14 +332,34 @@ export default function ButtonAddItem({
     if (draggedItemRef.current) {
       const item = draggedItemRef.current;
 
-      // Applique l'impulse basée sur la vélocité de la souris
-      const impulseMultiplier = 3; // Ajuste la force du lancer
-      const impulseX = mouseVelocityRef.current.x * impulseMultiplier;
-      const impulseY = mouseVelocityRef.current.y * impulseMultiplier;
+      item.body.type = Body.DYNAMIC;
+      item.body.updateMassProperties();
 
-      // Applique l'impulse au body physique
-      item.body.velocity.x = impulseX;
-      item.body.velocity.y = impulseY;
+      const velocity = mouseVelocityRef.current.length();
+      const minThrowSpeed = 0.015;
+
+      if (velocity > minThrowSpeed) {
+        // Non‑linear throw curve: small gesture = light throw, fast gesture = real throw
+        const strength = THREE.MathUtils.clamp(velocity * 14, 1.2, 6);
+
+        item.body.applyImpulse(
+          new Vec3(
+            mouseVelocityRef.current.x * strength,
+            mouseVelocityRef.current.y * strength,
+            0,
+          ),
+          item.body.position,
+        );
+
+        // Damping to keep it readable and UX‑friendly
+        item.body.velocity.scale(0.8, item.body.velocity);
+      }
+
+      item.body.angularVelocity.set(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        0,
+      );
 
       // Réinitialise la vélocité de la souris
       mouseVelocityRef.current.set(0, 0, 0);
