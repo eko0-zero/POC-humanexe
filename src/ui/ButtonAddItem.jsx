@@ -481,3 +481,6 @@ export default function ButtonAddItem({
     </div>
   );
 }
+
+
+// regler pour que les items puisse spawn a l'infinie
