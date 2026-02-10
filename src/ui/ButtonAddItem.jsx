@@ -432,7 +432,7 @@ export default function ButtonAddItem({
       isLoadingRef.current = true;
       setError(null);
 
-      const spawnX = (Math.random() - 0.5) * 2;
+      const spawnX = -2.5;
       const spawnY = 3;
       const spawnZ = 0;
 
@@ -462,12 +462,6 @@ export default function ButtonAddItem({
       >
         {isLoadingRef.current ? "⏳ Chargement..." : "➕ Add Item"}
       </button>
-
-      {itemCount > 0 && (
-        <div className="text-sm font-medium text-gray-700 bg-white px-3 py-1 rounded shadow">
-          Items: <span className="font-bold text-blue-600">{itemCount}</span>
-        </div>
-      )}
 
       {error && (
         <div className="text-xs text-red-600 bg-red-50 px-3 py-1 rounded shadow border border-red-200 max-w-xs">
