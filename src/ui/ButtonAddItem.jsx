@@ -482,9 +482,7 @@ export default function ButtonAddItem({
       )}
 
       {itemCount > 0 && (
-        <div className="text-xs text-gray-500 text-right">
-          📍 Drag les items
-        </div>
+        <div className="text-xs text-gray-500 text-right">Drag les items</div>
       )}
     </div>
   );

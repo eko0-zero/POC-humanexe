@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { World, Vec3, Body, Plane, Box } from "cannon-es";
 import ButtonAddItem from "./ui/ButtonAddItem";
+import Trash from "./ui/Trash";
 
 // Constantes de configuration :
 // - MODEL_PATH : chemin du modèle 3D principal
@@ -760,6 +761,9 @@ const App = () => {
           return { halfW: viewWidth / 2, halfH: viewHeight / 2 };
         }}
       />
+      {sceneRef.current && cameraRef.current && (
+        <Trash scene={sceneRef.current} camera={cameraRef.current} />
+      )}
       <canvas ref={canvasRef} />
     </main>
   );
