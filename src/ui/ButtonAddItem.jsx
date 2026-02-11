@@ -1,5 +1,6 @@
 // ButtonAddItem.jsx
-// Gestion du spawn, drag & drop et lancer d'objets avec Three.js + Cannon-es
+// Composant pour gérer le spawn, le drag & drop et le lancer d'objets
+// Utilise Three.js pour l'affichage 3D et Cannon-es pour la physique
 import { useRef, useCallback, useState, useEffect } from "react";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
@@ -13,8 +14,8 @@ const SPAWNED_ITEM_PATH = new URL("../assets/3D/cube.glb", import.meta.url)
 const GROUND_Y = -1;
 
 let contactMaterialAdded = false;
-// Assure que le ContactMaterial (item ↔ item) n'est ajouté qu'une seule fois au world
-// Définit comment deux items interagissent physiquement (friction, restitution)
+// Assure qu'un ContactMaterial est créé une seule fois pour tous les items
+// Définit friction, restitution et comportement de contact entre items
 function ensureContactMaterial(world) {
   if (contactMaterialAdded) return;
   const contact = new ContactMaterial(ITEM_MATERIAL, ITEM_MATERIAL, {
@@ -27,6 +28,9 @@ function ensureContactMaterial(world) {
   contactMaterialAdded = true;
 }
 
+// Charge un modèle 3D, crée le mesh Three.js et le body Cannon associé
+// Configure collisions, physique et offset par rapport au sol
+// Retourne un objet regroupant mesh, body et infos de taille
 async function createSpawnedItem(scene, world, position) {
   return new Promise((resolve, reject) => {
     // Charge le modèle 3D de l'item
@@ -142,6 +146,7 @@ export default function ButtonAddItem({
   const mouseVelocityRef = useRef(new THREE.Vector3());
 
   // Convertit les coordonnées écran (pixels) en coordonnées normalisées (-1 à 1)
+  // Utilisé pour le raycasting
   const screenToNDC = useCallback(
     (clientX, clientY) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -152,7 +157,7 @@ export default function ButtonAddItem({
   );
 
   // Projette la souris sur un plan perpendiculaire à la caméra
-  // Permet de récupérer une position monde stable pour le drag
+  // Utile pour positionner correctement un objet lors du drag
   const getMouseOnPlane = useCallback(
     (clientX, clientY, planePoint) => {
       screenToNDC(clientX, clientY);
@@ -170,7 +175,8 @@ export default function ButtonAddItem({
     [camera, screenToNDC],
   );
 
-  // Raycast pour détecter quel item est sous la souris
+  // Détecte quel item est sous la souris via raycasting
+  // Retourne l'objet item correspondant ou null
   const getItemUnderMouse = useCallback(
     (clientX, clientY) => {
       if (!spawnedItems.current.length) return null;
@@ -198,8 +204,8 @@ export default function ButtonAddItem({
     [spawnedItems, camera, screenToNDC],
   );
 
-  // Empêche les items de sortir de l'écran
-  // Applique un léger rebond lorsqu'un item touche les limites
+  // Empêche un item de sortir des limites de la vue
+  // Applique un léger rebond et verrouille la position Z
   const clampItemWithinBounds = useCallback(
     (item) => {
       const bounds = getViewBounds();
@@ -239,6 +245,9 @@ export default function ButtonAddItem({
     [getViewBounds, characterBody, spawnedItems],
   );
 
+  // Début du drag d'un item
+  // Passe le body en mode KINEMATIC pour suivre la souris sans subir la physique
+  // Calcule l'offset pour garder le point de saisie constant
   const onMouseDown = useCallback(
     (e) => {
       const { clientX, clientY } = e.touches
@@ -273,6 +282,9 @@ export default function ButtonAddItem({
     [getItemUnderMouse, getMouseOnPlane],
   );
 
+  // Pendant le drag, met à jour la position de l'item en suivant la souris
+  // Vérifie les limites et collisions avec le personnage
+  // Calcule la vélocité pour pouvoir lancer l'objet si relâché rapidement
   const onMouseMove = useCallback(
     (e) => {
       if (!draggedItemRef.current) return;
@@ -343,6 +355,9 @@ export default function ButtonAddItem({
     [getMouseOnPlane, getViewBounds, characterBody, spawnedItems],
   );
 
+  // Fin du drag
+  // Rebasculer le body en DYNAMIC et appliquer un lancer si la vitesse est suffisante
+  // Réinitialise la vélocité et l'état d'interaction
   const onMouseUp = useCallback(() => {
     if (draggedItemRef.current) {
       const item = draggedItemRef.current;
@@ -387,6 +402,8 @@ export default function ButtonAddItem({
     draggedItemRef.current = null;
   }, []);
 
+  // Écoute les événements souris et tactiles pour le drag & drop
+  // Cleanup des listeners lors du démontage
   useEffect(() => {
     if (!renderer) return;
 
@@ -407,7 +424,8 @@ export default function ButtonAddItem({
     };
   }, [onMouseDown, onMouseMove, onMouseUp, renderer]);
 
-  // Exposé global pour appeler le clamp à chaque frame depuis la loop principale
+  // Expose une fonction globale pour clamp les items chaque frame depuis la boucle principale
+  // Permet de garder les items à l'intérieur des limites de la vue
   useEffect(() => {
     window.clampSpawnedItemsWithinBounds = () => {
       spawnedItems.current.forEach((item) => {
@@ -420,6 +438,9 @@ export default function ButtonAddItem({
     };
   }, [spawnedItems, clampItemWithinBounds]);
 
+  // Handler pour ajouter un nouvel item
+  // Positionne le spawn de manière responsive et appelle createSpawnedItem
+  // Met à jour le compteur et gère les erreurs
   const handleClick = useCallback(async () => {
     if (!scene || !world || !spawnedItems) {
       setError("❌ Scene/World/Items non disponible");

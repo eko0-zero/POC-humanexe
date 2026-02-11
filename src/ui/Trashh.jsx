@@ -2,6 +2,13 @@ import { useEffect, useRef } from "react";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
+// Trashh.jsx
+// Composant gérant la poubelle 3D dans la scène
+// - Chargement du modèle
+// - Positionnement dynamique
+// - Hover et click interactions
+// - Suppression des items déposés
+
 const TRASH_PATH = new URL("../assets/3D/trash.glb", import.meta.url).href;
 const TRASH_Z_POSITION = 0.14; // ← Modifiez cette valeur pour ajuster Z
 
@@ -15,7 +22,7 @@ export default function Trash({
   const trashRef = useRef();
   const trashBoundsRef = useRef({
     position: new THREE.Vector3(),
-    size: new THREE.Vector3(0.5, 0.5, 0.5),
+    size: new THREE.Vector3(0.5, 0.5, 0.5), // Valeurs par défaut, seront mises à jour après chargement du modèle
   });
   const raycasterRef = useRef(new THREE.Raycaster());
   const mouseRef = useRef(new THREE.Vector2());
@@ -24,6 +31,10 @@ export default function Trash({
   const HOVER_SCALE = 0.88;
   const GROUND_Y = -1;
 
+  // === Chargement du modèle de la poubelle ===
+  // Charge le modèle GLB et l'ajoute à la scène
+  // Configure les ombres et clone les matériaux pour éviter les conflits
+  // Calcule les dimensions pour la détection de collision
   useEffect(() => {
     if (!scene || !camera) return;
 
@@ -67,7 +78,11 @@ export default function Trash({
     );
   }, [scene, camera]);
 
-  // Met à jour la position de la trash à chaque frame
+  // === Mise à jour de la position de la poubelle ===
+  // Positionne la poubelle à l'écran en fonction de la caméra
+  // Applique un scale fluide lors du hover
+  // Met à jour les bounds pour collision
+  // Remplace temporairement renderer.render pour inclure la mise à jour
   useEffect(() => {
     if (!renderer || !camera) return;
 
@@ -111,7 +126,10 @@ export default function Trash({
     };
   }, [renderer, camera]);
 
-  // Détection des collisions
+  // === Détection des collisions avec les items ===
+  // Vérifie la distance entre chaque item et la poubelle
+  // Supprime les items si proche de la poubelle
+  // Expose checkTrashCollisions globalement pour être appelé depuis la boucle principale
   useEffect(() => {
     window.checkTrashCollisions = () => {
       if (!trashRef.current || !spawnedItems.current.length) return;
@@ -152,7 +170,9 @@ export default function Trash({
     };
   }, [spawnedItems, world]);
 
-  // Hover sur la trash
+  // === Hover detection ===
+  // Utilise raycasting pour détecter si la souris est au-dessus de la poubelle
+  // Met à jour isHoveredRef pour le scale animé
   useEffect(() => {
     if (!renderer || !camera) return;
 
@@ -180,7 +200,9 @@ export default function Trash({
     };
   }, [renderer, camera]);
 
-  // Click sur la trash
+  // === Click detection ===
+  // Détecte le click sur la poubelle et supprime tous les items de la scène et du monde physique
+  // deleteAllItems gère le nettoyage complet
   useEffect(() => {
     if (!renderer || !camera) return;
 
