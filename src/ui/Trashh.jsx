@@ -19,6 +19,9 @@ export default function Trash({
   });
   const raycasterRef = useRef(new THREE.Raycaster());
   const mouseRef = useRef(new THREE.Vector2());
+  const isHoveredRef = useRef(false);
+  const BASE_SCALE = 0.84;
+  const HOVER_SCALE = 0.88;
   const GROUND_Y = -1;
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function Trash({
         trash.receiveShadow = true;
 
         trash.position.set(100, GROUND_Y + 0.2, TRASH_Z_POSITION);
-        trash.scale.set(0.5, 1, 1);
+        trash.scale.setScalar(BASE_SCALE);
         trash.rotation.set(0, Math.PI / 2, 0);
 
         trash.traverse((node) => {
@@ -81,11 +84,18 @@ export default function Trash({
 
       const { halfW, halfH } = getViewBounds();
       const TRASH_OFFSET_X = 0.35;
-      const TRASH_OFFSET_Y = 0.2;
+      const TRASH_OFFSET_Y = 0.185;
 
       trashRef.current.position.x = halfW - TRASH_OFFSET_X;
       trashRef.current.position.y = GROUND_Y + TRASH_OFFSET_Y;
       trashRef.current.position.z = TRASH_Z_POSITION;
+
+      const targetScale = isHoveredRef.current ? HOVER_SCALE : BASE_SCALE;
+
+      // Transition fluide (lerp)
+      const currentScale = trashRef.current.scale.x;
+      const smoothScale = THREE.MathUtils.lerp(currentScale, targetScale, 0.1);
+      trashRef.current.scale.setScalar(smoothScale);
 
       trashBoundsRef.current.position = trashRef.current.position.clone();
     };
@@ -141,6 +151,34 @@ export default function Trash({
       delete window.checkTrashCollisions;
     };
   }, [spawnedItems, world]);
+
+  // Hover sur la trash
+  useEffect(() => {
+    if (!renderer || !camera) return;
+
+    const onMouseMove = (e) => {
+      if (!trashRef.current) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycasterRef.current.setFromCamera(mouseRef.current, camera);
+
+      const intersects = raycasterRef.current.intersectObject(
+        trashRef.current,
+        true,
+      );
+
+      isHoveredRef.current = intersects.length > 0;
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+    };
+  }, [renderer, camera]);
 
   // Click sur la trash
   useEffect(() => {
