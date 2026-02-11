@@ -692,16 +692,38 @@ const App = () => {
         item.mesh.quaternion.copy(item.body.quaternion);
 
         // === DÉTECTION DE COLLISION AVEC LE MODÈLE ===
-        if (animationManager) {
+        if (animationManager && modelSize) {
+          // Centrer la détection sur la TÊTE réelle
+          let modelCenterPosition;
+
+          if (headBone) {
+            modelCenterPosition = new THREE.Vector3();
+            headBone.getWorldPosition(modelCenterPosition);
+          } else {
+            modelCenterPosition = new THREE.Vector3(
+              characterBody.position.x,
+              characterBody.position.y + HEAD_OFFSET_Y,
+              characterBody.position.z,
+            );
+          }
+
+          // Taille de collision réduite uniquement pour la tête
+          const headCollisionSize = new THREE.Vector3(0.81, 1, 0.82);
+
           const collision = animationManager.checkCollision(
             item.body.position,
             item.size,
-            characterBody.position,
-            new THREE.Vector3(0.8, 1.0, 0.6),
+            modelCenterPosition,
+            headCollisionSize,
           );
 
           if (collision) {
-            animationManager.playCollisionAnimation();
+            animationManager.playCollisionAnimation(item);
+            // Supprime l'item de la liste des items spawnés
+            const index = spawnedItemsRef.current.indexOf(item);
+            if (index > -1) {
+              spawnedItemsRef.current.splice(index, 1);
+            }
           }
         }
       });

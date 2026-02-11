@@ -65,7 +65,7 @@ export class AnimationManager {
   }
 
   // Lance l'animation quand il y a collision
-  playCollisionAnimation() {
+  playCollisionAnimation(itemToRemove) {
     // Vérifier le cooldown
     if (this.collisionCooldown > 0) {
       console.log("Animation en cooldown...");
@@ -119,6 +119,17 @@ export class AnimationManager {
 
     console.log("🎬 Animation de collision lancée!");
 
+    // === SUPPRIME L'ITEM IMMÉDIATEMENT ===
+    if (itemToRemove) {
+      // Supprime le mesh de la scène
+      this.scene.remove(itemToRemove.mesh);
+      // Supprime le body du monde physique
+      if (itemToRemove.body && itemToRemove.body.world) {
+        itemToRemove.body.world.removeBody(itemToRemove.body);
+      }
+      console.log("💨 Item supprimé!");
+    }
+
     // Nettoie après l'animation et réinitialise les bones
     const animationDuration = this.animationClip.duration * 1000;
     setTimeout(() => {
@@ -151,12 +162,14 @@ export class AnimationManager {
   }
 
   // Détecte si deux sphères (item et modèle) se chevauchent
+  // Sans marge supplémentaire - détection exacte sur le modèle
   checkCollision(itemPosition, itemSize, characterPosition, characterSize) {
     const itemRadius = Math.max(itemSize.x, itemSize.y, itemSize.z) / 2;
     const characterRadius =
       Math.max(characterSize.x, characterSize.y, characterSize.z) / 2;
 
     const distance = itemPosition.distanceTo(characterPosition);
+    // Détection EXACTE sans coefficient de marge
     const minDistance = itemRadius + characterRadius;
 
     return distance < minDistance;
