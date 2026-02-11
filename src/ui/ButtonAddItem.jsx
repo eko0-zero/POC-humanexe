@@ -482,5 +482,4 @@ export default function ButtonAddItem({
   );
 }
 
-
 // regler pour que les items puisse spawn a l'infinie
