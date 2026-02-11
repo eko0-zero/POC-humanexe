@@ -1,5 +1,5 @@
 // ButtonAddItem.jsx
-// Gestion du spawn, drag & drop et lancer d’objets avec Three.js + Cannon-es
+// Gestion du spawn, drag & drop et lancer d'objets avec Three.js + Cannon-es
 import { useRef, useCallback, useState, useEffect } from "react";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
@@ -13,7 +13,7 @@ const SPAWNED_ITEM_PATH = new URL("../assets/3D/cube.glb", import.meta.url)
 const GROUND_Y = -1;
 
 let contactMaterialAdded = false;
-// Assure que le ContactMaterial (item ↔ item) n’est ajouté qu’une seule fois au world
+// Assure que le ContactMaterial (item ↔ item) n'est ajouté qu'une seule fois au world
 // Définit comment deux items interagissent physiquement (friction, restitution)
 function ensureContactMaterial(world) {
   if (contactMaterialAdded) return;
@@ -29,7 +29,7 @@ function ensureContactMaterial(world) {
 
 async function createSpawnedItem(scene, world, position) {
   return new Promise((resolve, reject) => {
-    // Charge le modèle 3D de l’item
+    // Charge le modèle 3D de l'item
     const loader = new GLTFLoader();
     loader.load(
       SPAWNED_ITEM_PATH,
@@ -94,7 +94,7 @@ async function createSpawnedItem(scene, world, position) {
 
         world.addBody(body);
 
-        // Données regroupant le mesh Three + le body Cannon pour la logique d’interaction
+        // Données regroupant le mesh Three + le body Cannon pour la logique d'interaction
         const itemData = {
           mesh: model,
           body,
@@ -198,8 +198,8 @@ export default function ButtonAddItem({
     [spawnedItems, camera, screenToNDC],
   );
 
-  // Empêche les items de sortir de l’écran
-  // Applique un léger rebond lorsqu’un item touche les limites
+  // Empêche les items de sortir de l'écran
+  // Applique un léger rebond lorsqu'un item touche les limites
   const clampItemWithinBounds = useCallback(
     (item) => {
       const bounds = getViewBounds();
@@ -332,7 +332,7 @@ export default function ButtonAddItem({
         );
         lastMousePosRef.current.copy(currentMousePos);
 
-        // Pendant le drag, l’objet reste collé à la souris (pas d’inertie)
+        // Pendant le drag, l'objet reste collé à la souris (pas d'inertie)
         item.body.position.x = desiredX;
         item.body.position.y = desiredY;
         item.body.position.z = 0;
@@ -432,8 +432,10 @@ export default function ButtonAddItem({
       isLoadingRef.current = true;
       setError(null);
 
-      const spawnX = -2.5;
-      const spawnY = 3;
+      // Position de spawn responsive basée sur les limites de la vue
+      const bounds = getViewBounds();
+      const spawnX = -bounds.halfW + 0.5; // Spawn à gauche, un peu du bord
+      const spawnY = bounds.halfH + 1; // Spawn en haut
       const spawnZ = 0;
 
       const item = await createSpawnedItem(
@@ -449,7 +451,7 @@ export default function ButtonAddItem({
     } finally {
       isLoadingRef.current = false;
     }
-  }, [scene, world, spawnedItems]);
+  }, [scene, world, spawnedItems, getViewBounds]);
 
   const isDisabled = isLoadingRef.current || !scene || !world;
 
@@ -481,5 +483,3 @@ export default function ButtonAddItem({
     </div>
   );
 }
-
-// regler pour que les items puisse spawn a l'infinie
