@@ -5,6 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { World, Vec3, Body, Plane, Box } from "cannon-es";
 import ButtonAddItem from "./ui/ButtonAddItem";
 import Trash from "./ui/Trashh";
+import { AnimationManager } from "./ui/AnimationInteraction";
 
 // Chemin d'accès au modèle 3D
 const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
@@ -199,6 +200,7 @@ const App = () => {
   const modelSizeRef = useRef(new THREE.Vector3(1, 1, 1));
   const meshRef = useRef(null);
   const characterBodyRef = useRef(null);
+  const animationManagerRef = useRef(null);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -209,25 +211,17 @@ const App = () => {
     const height = window.innerHeight;
 
     // === Initialisation Three.js ===
-    // Création de la scène 3D principale, de la caméra et du renderer.
-    // La scène contient tous les objets visibles.
-    // La caméra définit le point de vue.
-    // Le renderer dessine le tout dans le canvas.
     const scene = new THREE.Scene();
     const camera = createCamera(width / height);
     const renderer = createRenderer(canvas, width, height);
     const { dirLight } = createLights(scene);
     createGround(scene);
 
-    // Stocke les références pour le composant enfant
     sceneRef.current = scene;
     cameraRef.current = camera;
     rendererRef.current = renderer;
 
     // === Initialisation physique ===
-    // Création du monde physique avec cannon-es.
-    // Ce monde gère la gravité, les collisions et les forces.
-    // Les bodies (sol + personnage) sont simulés ici.
     const world = createPhysicsWorld();
     worldRef.current = world;
 
@@ -265,13 +259,10 @@ const App = () => {
       characterBody.position.z,
     );
 
-    // === Chargement du modèle principal ===
-    // Chargement du modèle GLB.
-    // Une fois chargé :
-    // - On récupère sa taille
-    // - On extrait le skeleton
-    // - On stocke certaines bones (tête, bras)
-    // Cela permet ensuite d'animer certaines parties dynamiquement.
+    // === Initialisation AnimationManager ===
+    const animationManager = new AnimationManager(scene, mesh, skeleton);
+    animationManagerRef.current = animationManager;
+
     loadModel(scene, placeholder)
       .then((model) => {
         mesh = model;
@@ -316,19 +307,22 @@ const App = () => {
           characterBody.position.z,
         );
 
+        // Charger l'animation après le modèle
+        animationManager.loadAnimation().catch((err) => {
+          console.warn("Impossible de charger l'animation:", err);
+        });
+
         console.log("✅ Modèle principal chargé");
         setIsReady(true);
       })
       .catch((err) => {
         console.error("Erreur chargement modèle principal:", err);
-        setIsReady(true); // Permet quand même de continuer
+        setIsReady(true);
       });
 
     renderer.render(scene, camera);
 
     // === Raycasting ===
-    // Le raycasting permet de détecter les interactions souris/touch
-    // avec le modèle 3D (ex: cliquer sur la tête).
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -513,13 +507,6 @@ const App = () => {
     let animId;
     let lastTime = performance.now();
 
-    // === Boucle d'animation principale ===
-    // Cette fonction est appelée à chaque frame (~60fps).
-    // Elle met à jour :
-    // - La physique
-    // - Les animations des bones
-    // - Les objets spawnés
-    // - Le rendu final
     const animate = () => {
       animId = requestAnimationFrame(animate);
 
@@ -566,8 +553,6 @@ const App = () => {
         }
       }
 
-      // Avance la simulation physique d'un pas.
-      // 1/60 = simulation cible 60fps.
       world.step(1 / 60, dt, 3);
 
       characterBody.position.z = 0;
@@ -680,10 +665,7 @@ const App = () => {
       }
 
       // === Mise à jour des objets spawés ===
-      // Chaque item possède un body physique et un mesh.
-      // On synchronise le mesh (visuel) avec le body (physique).
       spawnedItemsRef.current.forEach((item) => {
-        // Applique la physique spring SEULEMENT pendant le drag
         if (item.useSpring && !item.isBeingDragged) {
           const diffX = item.desiredX - item.body.position.x;
           const diffY = item.desiredY - item.body.position.y;
@@ -698,28 +680,43 @@ const App = () => {
           item.body.velocity.x += (forceX / item.body.mass) * dt;
           item.body.velocity.y += (forceY / item.body.mass) * dt;
 
-          // Met à jour la position désirée vers la position actuelle
           item.desiredX = item.body.position.x;
           item.desiredY = item.body.position.y;
         }
 
-        // Verrouille l'axe Z à 0 (vue de face)
         item.body.position.z = 0;
         item.body.velocity.z = 0;
         item.body.angularVelocity.z = 0;
 
         item.mesh.position.copy(item.body.position);
         item.mesh.quaternion.copy(item.body.quaternion);
+
+        // === DÉTECTION DE COLLISION AVEC LE MODÈLE ===
+        if (animationManager) {
+          const collision = animationManager.checkCollision(
+            item.body.position,
+            item.size,
+            characterBody.position,
+            new THREE.Vector3(0.8, 1.0, 0.6),
+          );
+
+          if (collision) {
+            animationManager.playCollisionAnimation();
+          }
+        }
       });
 
-      // Applique les limites aux items spawés
       if (window.clampSpawnedItemsWithinBounds) {
         window.clampSpawnedItemsWithinBounds();
       }
 
-      // Vérifier les collisions avec la trash
       if (window.checkTrashCollisions) {
         window.checkTrashCollisions();
+      }
+
+      // Mettre à jour l'AnimationManager
+      if (animationManager) {
+        animationManager.update(dt);
       }
 
       updateLightTarget();
@@ -733,21 +730,18 @@ const App = () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
 
-    // === Gestion des événements utilisateur ===
-    // Écoute des interactions souris/tactiles et redimensionnement de la fenêtre
-    window.addEventListener("mousedown", onMouseDown); // Début du drag avec souris
-    window.addEventListener("mousemove", onMouseMove); // Déplacement lors du drag
-    window.addEventListener("mouseup", onMouseUp); // Fin du drag avec souris
-    window.addEventListener("touchstart", onMouseDown, { passive: false }); // Début du drag tactile
-    window.addEventListener("touchmove", onMouseMove, { passive: false }); // Déplacement tactile
-    window.addEventListener("touchend", onMouseUp); // Fin du drag tactile
-    window.addEventListener("resize", onResize); // Ajuste caméra et renderer lors du redimensionnement
-    renderer.domElement.addEventListener("dragover", onDragOver); // Empêche le comportement par défaut du drag
-    renderer.domElement.addEventListener("drop", onDrop); // Gère le drop d'éléments dans le canvas
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("touchstart", onMouseDown, { passive: false });
+    window.addEventListener("touchmove", onMouseMove, { passive: false });
+    window.addEventListener("touchend", onMouseUp);
+    window.addEventListener("resize", onResize);
+    renderer.domElement.addEventListener("dragover", onDragOver);
+    renderer.domElement.addEventListener("drop", onDrop);
 
-    // === Nettoyage des événements lors du démontage ===
     return () => {
-      cancelAnimationFrame(animId); // Arrête la boucle d'animation
+      cancelAnimationFrame(animId);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
@@ -757,7 +751,7 @@ const App = () => {
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("dragover", onDragOver);
       renderer.domElement.removeEventListener("drop", onDrop);
-      renderer.dispose(); // Libère la mémoire du renderer
+      renderer.dispose();
     };
   }, []);
 

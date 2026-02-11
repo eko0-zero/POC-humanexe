@@ -383,7 +383,7 @@ export default function ButtonAddItem({
         );
 
         // Damping to keep it readable and UX‑friendly
-        item.body.velocity.scale(0.8, item.body.velocity);
+        item.body.velocity.scale(1, item.body.velocity);
       }
 
       item.body.angularVelocity.set(
