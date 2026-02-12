@@ -66,6 +66,11 @@ export class AnimationManager {
 
   // Lance l'animation quand il y a collision
   playCollisionAnimation(itemToRemove) {
+    // Ignore new interactions if an animation is already playing
+    if (this.isAnimationPlaying) {
+      console.log("⛔ Animation already playing - interaction ignored");
+      return;
+    }
     // Vérifier le cooldown
     if (this.collisionCooldown > 0) {
       console.log("Animation en cooldown...");
@@ -90,6 +95,7 @@ export class AnimationManager {
 
     if (!skinnedMesh || !skinnedMesh.skeleton) {
       console.warn("Modèle skinné non trouvé");
+      this.isAnimationPlaying = false;
       return;
     }
 
@@ -164,6 +170,10 @@ export class AnimationManager {
   // Détecte si deux sphères (item et modèle) se chevauchent
   // Sans marge supplémentaire - détection exacte sur le modèle
   checkCollision(itemPosition, itemSize, characterPosition, characterSize) {
+    // Completely disable collision checks while animation is playing
+    if (this.isAnimationPlaying) {
+      return false;
+    }
     const itemRadius = Math.max(itemSize.x, itemSize.y, itemSize.z) / 2;
     const characterRadius =
       Math.max(characterSize.x, characterSize.y, characterSize.z) / 2;
