@@ -71,11 +71,6 @@ export class AnimationManager {
       console.log("⛔ Animation already playing - interaction ignored");
       return;
     }
-    // Vérifier le cooldown
-    if (this.collisionCooldown > 0) {
-      console.log("Animation en cooldown...");
-      return;
-    }
 
     if (!this.animationClip) {
       console.warn("Animation pas chargée");
@@ -83,7 +78,7 @@ export class AnimationManager {
     }
 
     this.isAnimationPlaying = true;
-    this.collisionCooldown = this.COLLISION_COOLDOWN_TIME;
+    this.collisionCooldown = this.COLLISION_COOLDOWN_TIME; // Supprimer à terme et remplacer par une vérification de fin d'animation -> utiliser uniquement la propriété isAnimationPlaying pour contrôler les interactions et la détection de collision pendant l'animation
 
     // Récupère le modèle skinné de la scène
     let skinnedMesh = null;
@@ -94,7 +89,6 @@ export class AnimationManager {
     });
 
     if (!skinnedMesh || !skinnedMesh.skeleton) {
-      console.warn("Modèle skinné non trouvé");
       this.isAnimationPlaying = false;
       return;
     }
