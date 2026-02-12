@@ -182,6 +182,15 @@ export class AnimationManager {
       return;
     }
 
+    // === DEBUG ITEM COMPLET DANS LA CONSOLE ===
+    console.log("🧩 itemToRemove complet :", itemToRemove);
+
+    if (itemToRemove && itemToRemove.stats) {
+      console.log("🎁 Item reçu !");
+      console.log("📊 Stats de l'item :", itemToRemove.stats);
+    } else {
+      console.warn("⚠️ Aucun stats trouvé sur itemToRemove");
+    }
     // === SUPPRIME L'ITEM IMMÉDIATEMENT ===
     if (itemToRemove) {
       try {

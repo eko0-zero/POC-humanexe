@@ -11,10 +11,22 @@ const ITEM_MATERIAL = new Material("itemMaterial");
 
 // Liste des modèles d'item disponibles (tous utilisent la même physique que cube.glb)
 const ITEM_MODELS = [
-  new URL("../assets/3D/cube-v.glb", import.meta.url).href,
-  new URL("../assets/3D/cube-o.glb", import.meta.url).href,
-  new URL("../assets/3D/cube-b.glb", import.meta.url).href,
-  new URL("../assets/3D/cube-r.glb", import.meta.url).href,
+  {
+    path: new URL("../assets/3D/cube-v.glb", import.meta.url).href,
+    stats: { power: 2, weight: 1, speed: 3, rarity: 1 },
+  },
+  {
+    path: new URL("../assets/3D/cube-o.glb", import.meta.url).href,
+    stats: { power: 4, weight: 2, speed: 2, rarity: 2 },
+  },
+  {
+    path: new URL("../assets/3D/cube-b.glb", import.meta.url).href,
+    stats: { power: 1, weight: 1, speed: 5, rarity: 3 },
+  },
+  {
+    path: new URL("../assets/3D/cube-r.glb", import.meta.url).href,
+    stats: { power: 5, weight: 3, speed: 1, rarity: 4 },
+  },
 ];
 const GROUND_Y = -1;
 
@@ -37,12 +49,12 @@ function ensureContactMaterial(world) {
 // Tous les modèles utilisent exactement les mêmes paramètres physiques (ceux de cube.glb)
 // Configure collisions, physique et offset par rapport au sol
 // Retourne un objet regroupant mesh, body et infos de taille
-async function createSpawnedItem(scene, world, position, modelPath) {
+async function createSpawnedItem(scene, world, position, modelConfig) {
   return new Promise((resolve, reject) => {
     // Charge le modèle 3D de l'item
     const loader = new GLTFLoader();
     loader.load(
-      modelPath,
+      modelConfig.path,
       (gltf) => {
         const model = gltf.scene;
         model.position.copy(position);
@@ -112,15 +124,15 @@ async function createSpawnedItem(scene, world, position, modelPath) {
           body,
           size,
           groundOffset: itemGroundOffset,
-          // Physique smooth plus rapide
-          springStiffness: 1000, // Augmenté
-          springDamping: 100, // Augmenté
+          springStiffness: 1000,
+          springDamping: 100,
           isBeingDragged: false,
           desiredX: body.position.x,
           desiredY: body.position.y,
-          useSpring: false, // Désactive la spring par défaut
+          useSpring: false,
           items: true,
-          modelPath: modelPath, // ✅ Stocke le chemin du modèle pour l'animation
+          modelPath: modelConfig.path,
+          stats: modelConfig.stats, // ✅ Stats spécifiques à chaque item
         };
 
         resolve(itemData);
@@ -471,13 +483,13 @@ export default function ButtonAddItem({
 
       // Sélection aléatoire d'un modèle parmi les 5
       const randomIndex = Math.floor(Math.random() * ITEM_MODELS.length);
-      const modelPath = ITEM_MODELS[randomIndex];
+      const modelConfig = ITEM_MODELS[randomIndex];
 
       const item = await createSpawnedItem(
         scene,
         world,
         new THREE.Vector3(spawnX, spawnY, spawnZ),
-        modelPath,
+        modelConfig,
       );
       spawnedItems.current.push(item);
 
