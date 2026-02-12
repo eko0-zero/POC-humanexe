@@ -11,10 +11,10 @@ const ITEM_MATERIAL = new Material("itemMaterial");
 
 // Liste des modèles d'item disponibles (tous utilisent la même physique que cube.glb)
 const ITEM_MODELS = [
-  new URL("../assets/3D/cube.glb", import.meta.url).href,
   new URL("../assets/3D/cube-v.glb", import.meta.url).href,
   new URL("../assets/3D/cube-o.glb", import.meta.url).href,
   new URL("../assets/3D/cube-b.glb", import.meta.url).href,
+  new URL("../assets/3D/cube-r.glb", import.meta.url).href,
 ];
 const GROUND_Y = -1;
 
@@ -120,6 +120,7 @@ async function createSpawnedItem(scene, world, position, modelPath) {
           desiredY: body.position.y,
           useSpring: false, // Désactive la spring par défaut
           items: true,
+          modelPath: modelPath, // ✅ Stocke le chemin du modèle pour l'animation
         };
 
         resolve(itemData);
@@ -468,7 +469,7 @@ export default function ButtonAddItem({
       const spawnY = bounds.halfH + 1; // Spawn en haut
       const spawnZ = 0;
 
-      // Sélection aléatoire d'un modèle parmi les 4
+      // Sélection aléatoire d'un modèle parmi les 5
       const randomIndex = Math.floor(Math.random() * ITEM_MODELS.length);
       const modelPath = ITEM_MODELS[randomIndex];
 
