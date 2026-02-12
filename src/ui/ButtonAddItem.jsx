@@ -9,8 +9,13 @@ import { Body, Box, Vec3, Material, ContactMaterial } from "cannon-es";
 // Matériau physique partagé par tous les items (friction / rebond)
 const ITEM_MATERIAL = new Material("itemMaterial");
 
-const SPAWNED_ITEM_PATH = new URL("../assets/3D/cube.glb", import.meta.url)
-  .href;
+// Liste des modèles d'item disponibles (tous utilisent la même physique que cube.glb)
+const ITEM_MODELS = [
+  new URL("../assets/3D/cube.glb", import.meta.url).href,
+  new URL("../assets/3D/cube-v.glb", import.meta.url).href,
+  new URL("../assets/3D/cube-o.glb", import.meta.url).href,
+  new URL("../assets/3D/cube-b.glb", import.meta.url).href,
+];
 const GROUND_Y = -1;
 
 let contactMaterialAdded = false;
@@ -29,14 +34,15 @@ function ensureContactMaterial(world) {
 }
 
 // Charge un modèle 3D, crée le mesh Three.js et le body Cannon associé
+// Tous les modèles utilisent exactement les mêmes paramètres physiques (ceux de cube.glb)
 // Configure collisions, physique et offset par rapport au sol
 // Retourne un objet regroupant mesh, body et infos de taille
-async function createSpawnedItem(scene, world, position) {
+async function createSpawnedItem(scene, world, position, modelPath) {
   return new Promise((resolve, reject) => {
     // Charge le modèle 3D de l'item
     const loader = new GLTFLoader();
     loader.load(
-      SPAWNED_ITEM_PATH,
+      modelPath,
       (gltf) => {
         const model = gltf.scene;
         model.position.copy(position);
@@ -65,17 +71,20 @@ async function createSpawnedItem(scene, world, position) {
         const centerY = (boxMin.y + boxMax.y) / 2;
         const itemGroundOffset = centerY - boxMin.y;
 
+        // Tous les modèles utilisent les mêmes paramètres physiques que cube.glb :
+        // - forme: Box basée sur la bounding box
+        // - masse, friction, restitution, damping identiques
         const halfExtents = new Vec3(
           Math.max(size.x / 2, 0.05),
           Math.max(size.y / 2, 0.05),
           Math.max(size.z / 2, 0.05),
         );
-
         const shape = new Box(halfExtents);
 
         ensureContactMaterial(world);
 
         // Création du body physique Cannon associé au mesh Three.js
+        // Tous les paramètres sont identiques pour tous les modèles
         const body = new Body({
           mass: 1,
           material: ITEM_MATERIAL,
@@ -85,7 +94,6 @@ async function createSpawnedItem(scene, world, position) {
           collisionResponse: true,
         });
         body.addShape(shape);
-
         body.collisionFilterGroup = 1;
         body.collisionFilterMask = 1;
 
@@ -111,6 +119,7 @@ async function createSpawnedItem(scene, world, position) {
           desiredX: body.position.x,
           desiredY: body.position.y,
           useSpring: false, // Désactive la spring par défaut
+          items: true,
         };
 
         resolve(itemData);
@@ -459,10 +468,15 @@ export default function ButtonAddItem({
       const spawnY = bounds.halfH + 1; // Spawn en haut
       const spawnZ = 0;
 
+      // Sélection aléatoire d'un modèle parmi les 4
+      const randomIndex = Math.floor(Math.random() * ITEM_MODELS.length);
+      const modelPath = ITEM_MODELS[randomIndex];
+
       const item = await createSpawnedItem(
         scene,
         world,
         new THREE.Vector3(spawnX, spawnY, spawnZ),
+        modelPath,
       );
       spawnedItems.current.push(item);
 
