@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 export class HealthManager {
   constructor(maxHealth = 200) {
     this.maxHealth = maxHealth;
-    this.currentHealth = 100; // ✅ Commence à 100
+    this.currentHealth = 50; // ✅ Commence à 100
     this.healthChangeCallbacks = [];
   }
 
