@@ -1,6 +1,6 @@
 // ui/animation.jsx
 // Système complet de gestion des animations avec détection de collision
-// ✅ VERSION STABLE - SANS ÉCRAN BLANC
+// ✅ VERSION STABLE - AVEC GESTION DE SANTÉ
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
@@ -14,10 +14,11 @@ const ANIMATION_MAPPING = {
 };
 
 export class AnimationManager {
-  constructor(scene, mesh, skeleton) {
+  constructor(scene, mesh, skeleton, healthManager = null) {
     this.scene = scene;
     this.mesh = mesh;
     this.skeleton = skeleton;
+    this.healthManager = healthManager; // ✅ NOUVEAU: Lien vers le gestionnaire de santé
     this.mixer = null;
     this.actions = {};
     this.currentAction = null;
@@ -191,6 +192,15 @@ export class AnimationManager {
     } else {
       console.warn("⚠️ Aucun stats trouvé sur itemToRemove");
     }
+
+    // === ✅ APPLIQUE L'EFFET DE SANTÉ ===
+    if (itemToRemove && itemToRemove.stats && this.healthManager) {
+      console.log("❤️ Application de l'effet de santé:", itemToRemove.stats);
+      this.healthManager.applyItemEffect(itemToRemove.stats);
+    } else if (!this.healthManager) {
+      console.warn("⚠️ HealthManager non disponible");
+    }
+
     // === SUPPRIME L'ITEM IMMÉDIATEMENT ===
     if (itemToRemove) {
       try {

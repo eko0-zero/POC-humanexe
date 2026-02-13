@@ -9,23 +9,29 @@ import { Body, Box, Vec3, Material, ContactMaterial } from "cannon-es";
 // Matériau physique partagé par tous les items (friction / rebond)
 const ITEM_MATERIAL = new Material("itemMaterial");
 
-// Liste des modèles d'item disponibles (tous utilisent la même physique que cube.glb)
+// ✅ Liste des modèles d'item avec STATS CORRECTES (health au lieu de power)
 const ITEM_MODELS = [
   {
     path: new URL("../assets/3D/cube-v.glb", import.meta.url).href,
-    stats: { power: 2, weight: 1, speed: 3, rarity: 1 },
+    stats: { name: "Potion Verte", health: 10, weight: 1, speed: 3, rarity: 1 },
   },
   {
     path: new URL("../assets/3D/cube-o.glb", import.meta.url).href,
-    stats: { power: 4, weight: 2, speed: 2, rarity: 2 },
+    stats: {
+      name: "Élixir Orange",
+      health: -15,
+      weight: 2,
+      speed: 2,
+      rarity: 1,
+    },
   },
   {
     path: new URL("../assets/3D/cube-b.glb", import.meta.url).href,
-    stats: { power: 1, weight: 1, speed: 5, rarity: 3 },
+    stats: { name: "Poison Bleu", health: 5, weight: 1, speed: 5, rarity: 1 },
   },
   {
     path: new URL("../assets/3D/cube-r.glb", import.meta.url).href,
-    stats: { power: 5, weight: 3, speed: 1, rarity: 4 },
+    stats: { name: "Bombe Rouge", health: -25, weight: 3, speed: 1, rarity: 1 },
   },
 ];
 const GROUND_Y = -1;
@@ -481,7 +487,7 @@ export default function ButtonAddItem({
       const spawnY = bounds.halfH + 1; // Spawn en haut
       const spawnZ = 0;
 
-      // Sélection aléatoire d'un modèle parmi les 5
+      // Sélection aléatoire d'un modèle parmi les 4
       const randomIndex = Math.floor(Math.random() * ITEM_MODELS.length);
       const modelConfig = ITEM_MODELS[randomIndex];
 

@@ -6,6 +6,7 @@ import { World, Vec3, Body, Plane, Box } from "cannon-es";
 import ButtonAddItem from "./ui/ButtonAddItem";
 import Trash from "./ui/Trashh";
 import { AnimationManager } from "./ui/AnimationInteraction";
+import { HealthManager, HealthBar } from "./ui/Healthbar";
 
 // Chemin d'accès au modèle 3D
 const MODEL_PATH = new URL("./assets/3D/test.glb", import.meta.url).href;
@@ -203,6 +204,9 @@ const App = () => {
   const animationManagerRef = useRef(null);
   const [isReady, setIsReady] = useState(false);
 
+  // ✅ CRÉER LE HEALTH MANAGER DÈS LE DÉPART
+  const [healthManager] = useState(() => new HealthManager(100));
+
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -259,8 +263,13 @@ const App = () => {
       characterBody.position.z,
     );
 
-    // === Initialisation AnimationManager ===
-    const animationManager = new AnimationManager(scene, mesh, skeleton);
+    // === ✅ Initialisation AnimationManager AVEC LE HEALTH MANAGER ===
+    const animationManager = new AnimationManager(
+      scene,
+      mesh,
+      skeleton,
+      healthManager,
+    );
     animationManagerRef.current = animationManager;
 
     loadModel(scene, placeholder)
@@ -308,9 +317,9 @@ const App = () => {
         );
 
         // Charger l'animation après le modèle
-        animationManager.loadAnimation().catch((err) => {
-          console.warn("Impossible de charger l'animation:", err);
-        });
+        // animationManager.loadAnimation().catch((err) => {
+        //   console.warn("Impossible de charger l'animation:", err);
+        // });
 
         console.log("✅ Modèle principal chargé");
         setIsReady(true);
@@ -775,10 +784,15 @@ const App = () => {
       renderer.domElement.removeEventListener("drop", onDrop);
       renderer.dispose();
     };
-  }, []);
+  }, [healthManager]);
 
   return (
     <main className="relative w-full h-screen">
+      {/* ✅ AFFICHER LA BARRE DE VIE AVEC LE HEALTH MANAGER */}
+      <HealthBar
+        healthManager={healthManager}
+        className="absolute bottom-80 left-5"
+      />
       <h1 className="absolute p-5">Human.exe POC</h1>
       <ButtonAddItem
         scene={sceneRef.current}
